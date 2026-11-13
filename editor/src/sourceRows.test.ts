@@ -112,6 +112,12 @@ describe("questsLocalRows", () => {
     expect(questsLocalRows({ documents: {} }, QUESTS)).toBeNull();
   });
 
+  it("answers a menu that still names a source by its former msquests prefix", () => {
+    const { project } = load(daily, "en");
+    expect(questsLocalRows(project, "msquests:quests")).toEqual(questsLocalRows(project, QUESTS));
+    expect(questsLocalRows(project, "msquests:groups")).toEqual(questsLocalRows(project, GROUPS));
+  });
+
   it("keeps the player's state of a quest and takes its definition from the draft", () => {
     const { rows } = load(daily, "en");
     const serverRows = [
