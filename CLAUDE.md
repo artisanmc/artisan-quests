@@ -16,15 +16,16 @@ The shadow JAR is automatically copied to `docker/plugins/` on build.
 
 ## Project Structure
 
-This is a Gradle multi-module project targeting Paper 1.21+ (Minecraft plugin):
+This is a Gradle multi-module project targeting Paper, Folia and Spigot 1.21+ (Minecraft plugin; Adventure and other Paper-only calls stay in `bukkit/platform/PaperOnly`, messages go through Artisan's `TextApi`):
 
 - **`core/`** — Platform-agnostic quest logic: domain model, services, registries, factories, DTOs, mappers, event dispatching abstraction
 - **`bukkit/`** — Paper/Bukkit integration: plugin entry point, commands, listeners, Bukkit-specific objective handlers, actions, PlaceholderAPI
 - **`database/`** — SQL persistence: JDBI + HikariCP, schema migrations, async repositories (MySQL or H2)
+- **`editor/`** — the `quest_group` view of the Artisan editor (TypeScript + React against `@artisan/editor-sdk`, vendored in `editor/vendor/`). `cd editor && npm ci && npm test && npm run build` writes `bukkit/src/main/resources/artisan-editor/ui.js`, which is committed; rebuild it after any change in `editor/src`. `MsQuestsArtisanModule` registers it (`EDITOR_SDK` = the SDK version the build prints). While developing, `npm run watch` rebuilds `ui.js` on each save; with `dev.editor-bundles.msquests: <absolute path to that ui.js>` in Artisan's `environment.yml`, the server serves it without a restart (reload the editor to see a build).
 
 Root package: `com.github.ibanetchep.msquests`
 
-The plugin is published as **ArtisanQuests** (formerly MSQuests). Only user-facing names changed; legacy names stay accepted (`provides: [MSQuests]`, data folder copied on first start, `/msquests` and `%msquests_...%` aliases). Permissions (`artisanquests.*`, old `msquests.*` nodes declared as parents) and the Artisan module/data sources (`artisanquests:*`, no alias) were renamed too; the zMenu button type and table names keep the `msquests` prefix on purpose. See ARCHITECTURE.md, section "Nom du plugin".
+The plugin is published as **ArtisanQuests** (formerly MSQuests). Only the plugin name, data folder, admin command and permissions changed; legacy names stay accepted (`provides: [MSQuests]`, data folder copied on first start, `/msquests` alias, old `msquests.*` nodes declared as parents of `artisanquests.*`). The Artisan module id `msquests`, its `msquests:*` data sources and commands, the zMenu button type and table names keep the `msquests` prefix on purpose. See ARCHITECTURE.md, section "Plugin name".
 
 ## Architecture
 
@@ -38,7 +39,9 @@ The platform abstraction (`MSQuestsPlatform`) decouples core logic from Bukkit. 
 
 **Registries (in-memory store):** `QuestRegistry`, `QuestConfigRegistry`, `QuestActorRegistry`, `PlayerProfileRegistry`, `ActorTypeRegistry`. `QuestRegistry` has dirty tracking to avoid unnecessary DB writes.
 
-**Factories:** `QuestFactory`, `QuestObjectiveFactory`, `QuestActionFactory` — create domain objects from config or DTOs.
+**Factories:** `QuestFactory`, `QuestObjectiveFactory` — create domain objects from config or DTOs.
+
+**Artisan chains:** rewards, group hooks and requirements are Artisan action chains / conditions, carried opaquely by core (`ActionChain`, `Conditions`) and run through the `ChainRunner` / `ConditionChecker` ports (`ArtisanChainRunner`, `ArtisanConditionChecker` in `bukkit/.../artisan/`). Legacy MSQuests actions are converted by `LegacyActions`.
 
 **Services orchestrate everything:**
 - `QuestLifecycleService` — start, complete, expire quests
@@ -62,15 +65,15 @@ Two actor types: `QuestPlayerActor` (per-player) and `QuestGlobalActor` (server-
 3. Register the type in the `ActorTypeRegistry` or the objective factory as appropriate
 4. Add the YAML deserialization mapping in `QuestObjectiveFactory`
 
-### Adding a New Action Type
+### Adding a New Action
 
-1. Create a class in `core/.../quest/action/` (or `bukkit/.../quest/action/`)
-2. Register it in `QuestActionFactory`
+There are no MSQuests action types any more. A generic action belongs in Artisan's core; a quest-specific one is a `quests:*` action declared in `bukkit/.../artisan/QuestActions` (tested in `QuestActionsTest`).
 
 ## Configuration
 
 - `core/src/main/resources/config.yml` — database settings, language, actor type action hooks
 - Quest YAML configs live in `bukkit/src/main/resources/quests/` and are loaded via `QuestConfigYamlRepository`
+- With `content_source: artisan`, quests load from the `quest_group` Documents of `<project>/quest_groups/` in every Artisan project (`QuestGroupDocumentRepository`, group keys unique on the server) and progress from the `artisan_quests_*` tables, keyed by immutable uids; `/msquests migrate` converts (see `ARCHITECTURE.md`, *Content source*)
 - Language files: `core/src/main/resources/lang/`
 
 ## Testing
@@ -85,4 +88,4 @@ Two actor types: `QuestPlayerActor` (per-player) and `QuestGlobalActor` (server-
 - **Jackson** — JSON/YAML for DTOs and serialization
 - **JDBI 3** — SQL query mapping
 - **FoliaLib** — Folia-compatible scheduler abstraction (use instead of `Bukkit.getScheduler()`)
-- **PlaceholderAPI** — optional; expansion registered in `QuestsPlaceholderExpansion`
+- **PlaceholderAPI** — optional; placeholders live in Artisan's registry (`quests`, `QuestPlaceholders`), `QuestsPlaceholderExpansion` keeps the `msquests` PAPI alias

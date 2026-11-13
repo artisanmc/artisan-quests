@@ -4,13 +4,14 @@ import com.github.ibanetchep.msquests.core.lang.PlaceholderProvider;
 import com.github.ibanetchep.msquests.core.lang.Translator;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestTierConfig;
-import com.github.ibanetchep.msquests.core.quest.config.action.QuestAction;
+import com.github.ibanetchep.msquests.core.quest.config.action.ActionChain;
 import com.github.ibanetchep.msquests.core.util.CronUtils;
 import com.cronutils.model.time.ExecutionTime;
 import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
-import java.util.ArrayList;
+import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public class QuestGroupConfig implements PlaceholderProvider {
 
+    /** {@link #getObjectiveLine()} of a group that sets none: MSQuests' usual list item. */
+    public static final String DEFAULT_OBJECTIVE_LINE = "<newline> - {objective_name}";
+
     private final String key;
+    private final @Nullable String uid;
+    private final @Nullable String sourceProject;
     private final String name;
     private final String description;
     private final String actorType;
@@ -31,6 +37,7 @@ public class QuestGroupConfig implements PlaceholderProvider {
     private final @Nullable Instant endAt;
 
     private final @Nullable String resetCron;
+    private final @Nullable ZoneId resetZone;
     /** The parsed reset schedule, built once with the group: see {@link CronUtils}. */
     private final @Nullable ExecutionTime resetSchedule;
     /** The reset window around the last computation; valid as long as "now" stays inside it. */
@@ -38,13 +45,15 @@ public class QuestGroupConfig implements PlaceholderProvider {
     private final @Nullable Integer maxPerPeriod;
     private final int maxActive;
 
-    private final List<QuestAction> questStartActions;
-    private final List<QuestAction> questCompleteActions;
-    private final List<QuestAction> objectiveProgressActions;
-    private final List<QuestAction> objectiveCompleteActions;
-    private final List<QuestAction> questDistributionActions;
-    private final List<QuestAction> actorLoadActions;
-    private final List<QuestAction> allPeriodQuestsCompleteActions;
+    private final ActionChain questStartActions;
+    private final ActionChain questCompleteActions;
+    private final ActionChain objectiveProgressActions;
+    private final ActionChain objectiveCompleteActions;
+    private final ActionChain questDistributionActions;
+    private final ActionChain actorLoadActions;
+    private final ActionChain allPeriodQuestsCompleteActions;
+
+    private final String objectiveLine;
 
     private final Map<String, QuestTierConfig> tiers;
     private final @Nullable Map<String, Integer> tierDistribution;
@@ -56,11 +65,14 @@ public class QuestGroupConfig implements PlaceholderProvider {
 
     private QuestGroupConfig(Builder builder) {
         this.key = builder.key;
+        this.uid = builder.uid;
+        this.sourceProject = builder.sourceProject;
         this.name = builder.name;
         this.description = builder.description;
         this.startAt = builder.startAt;
         this.endAt = builder.endAt;
         this.resetCron = builder.resetCron;
+        this.resetZone = builder.resetZone;
         this.resetSchedule = builder.resetCron != null ? CronUtils.schedule(builder.resetCron) : null;
         this.maxPerPeriod = builder.maxPerPeriod;
         this.maxActive = builder.maxActive;
@@ -74,6 +86,7 @@ public class QuestGroupConfig implements PlaceholderProvider {
         this.questDistributionActions = builder.questDistributionActions;
         this.actorLoadActions = builder.actorLoadActions;
         this.allPeriodQuestsCompleteActions = builder.allPeriodQuestsCompleteActions;
+        this.objectiveLine = builder.objectiveLine != null ? builder.objectiveLine : DEFAULT_OBJECTIVE_LINE;
         this.tiers = builder.tiers != null ? builder.tiers : Map.of();
         this.tierDistribution = builder.tierDistribution;
         this.rotatable = builder.rotatable;
@@ -83,6 +96,29 @@ public class QuestGroupConfig implements PlaceholderProvider {
 
     public String getKey() {
         return key;
+    }
+
+    /**
+     * Immutable id of a group read from a {@code quest_group} Document, null for a group read
+     * from {@code quests/*.yml}. The key is the Document's name and may be renamed; the uid is
+     * what the database stores.
+     */
+    public @Nullable String getUid() {
+        return uid;
+    }
+
+    /**
+     * The Artisan project whose {@code quest_groups/} holds this group's Document: its action
+     * chains run in that project, so their menu references resolve there. Null for a group read
+     * from {@code quests/*.yml}.
+     */
+    public @Nullable String getSourceProject() {
+        return sourceProject;
+    }
+
+    /** What rows referencing this group store: its uid when it has one, else its key. */
+    public String getStorageId() {
+        return uid != null ? uid : key;
     }
 
     public String getName() {
@@ -133,6 +169,11 @@ public class QuestGroupConfig implements PlaceholderProvider {
         return resetCron;
     }
 
+    /** Zone the reset cron is read in; the server's zone when the group names none. */
+    public ZoneId getResetZone() {
+        return resetZone != null ? resetZone : ZoneId.systemDefault();
+    }
+
     public @Nullable Integer getMaxPerPeriod() {
         return maxPerPeriod;
     }
@@ -141,32 +182,41 @@ public class QuestGroupConfig implements PlaceholderProvider {
         return maxActive;
     }
 
-    public List<QuestAction> getQuestStartActions() {
-        return Collections.unmodifiableList(questStartActions);
+    public ActionChain getQuestStartActions() {
+        return questStartActions;
     }
 
-    public List<QuestAction> getQuestCompleteActions() {
-        return Collections.unmodifiableList(questCompleteActions);
+    public ActionChain getQuestCompleteActions() {
+        return questCompleteActions;
     }
 
-    public List<QuestAction> getObjectiveProgressActions() {
-        return Collections.unmodifiableList(objectiveProgressActions);
+    public ActionChain getObjectiveProgressActions() {
+        return objectiveProgressActions;
     }
 
-    public List<QuestAction> getObjectiveCompleteActions() {
-        return Collections.unmodifiableList(objectiveCompleteActions);
+    public ActionChain getObjectiveCompleteActions() {
+        return objectiveCompleteActions;
     }
 
-    public List<QuestAction> getQuestDistributionActions() {
-        return Collections.unmodifiableList(questDistributionActions);
+    public ActionChain getQuestDistributionActions() {
+        return questDistributionActions;
     }
 
-    public List<QuestAction> getActorLoadActions() {
-        return Collections.unmodifiableList(actorLoadActions);
+    public ActionChain getActorLoadActions() {
+        return actorLoadActions;
     }
 
-    public List<QuestAction> getAllPeriodQuestsCompleteActions() {
-        return Collections.unmodifiableList(allPeriodQuestsCompleteActions);
+    public ActionChain getAllPeriodQuestsCompleteActions() {
+        return allPeriodQuestsCompleteActions;
+    }
+
+    /**
+     * How the {@code {objectives}} binding of a chain renders one objective: {@code {name}}
+     * placeholders of the objective ({@code {objective_name}}, {@code {objective_progress}}…),
+     * the lines joined as they are.
+     */
+    public String getObjectiveLine() {
+        return objectiveLine;
     }
 
     public Map<String, QuestTierConfig> getTiers() {
@@ -226,12 +276,12 @@ public class QuestGroupConfig implements PlaceholderProvider {
 
     /** The first reset strictly after {@code from}, {@code null} without a reset cron. */
     public @Nullable Instant getNextResetAfter(Instant from) {
-        return resetSchedule != null ? CronUtils.getNextExecution(resetSchedule, from) : null;
+        return resetSchedule != null ? CronUtils.getNextExecution(resetSchedule, from, getResetZone()) : null;
     }
 
     /** The last reset strictly before {@code from}, {@code null} without a reset cron. */
     public @Nullable Instant getPreviousResetBefore(Instant from) {
-        return resetSchedule != null ? CronUtils.getPreviousExecution(resetSchedule, from) : null;
+        return resetSchedule != null ? CronUtils.getPreviousExecution(resetSchedule, from, getResetZone()) : null;
     }
 
     public @Nullable Instant getPeriodEnd() {
@@ -277,8 +327,8 @@ public class QuestGroupConfig implements PlaceholderProvider {
             return window;
         }
         window = new ResetWindow(
-                CronUtils.getPreviousExecution(resetSchedule, now),
-                CronUtils.getNextExecution(resetSchedule, now)
+                CronUtils.getPreviousExecution(resetSchedule, now, getResetZone()),
+                CronUtils.getNextExecution(resetSchedule, now, getResetZone())
         );
         resetWindow = window;
         return window;
@@ -299,11 +349,11 @@ public class QuestGroupConfig implements PlaceholderProvider {
 
     @Override
     public Map<String, String> getPlaceholders(Translator translator) {
-        return Map.of(
-                "group_key", key,
-                "group_name", name,
-                "group_description", description
-        );
+        Map<String, String> placeholders = new LinkedHashMap<>();
+        placeholders.put("group_key", key);
+        placeholders.put("group_name", name != null ? name : "");
+        placeholders.put("group_description", description != null ? description : "");
+        return placeholders;
     }
 
     public static class Builder {
@@ -312,19 +362,23 @@ public class QuestGroupConfig implements PlaceholderProvider {
         private final String description;
         private final String actorType;
 
+        private @Nullable String uid;
+        private @Nullable String sourceProject;
+        private @Nullable ZoneId resetZone;
         private @Nullable Instant startAt;
         private @Nullable Instant endAt;
         private @Nullable String resetCron;
         private @Nullable Integer maxPerPeriod = 1;
         private int maxActive = 1;
 
-        private List<QuestAction> questStartActions;
-        private List<QuestAction> questCompleteActions;
-        private List<QuestAction> objectiveProgressActions;
-        private List<QuestAction> objectiveCompleteActions;
-        private List<QuestAction> questDistributionActions;
-        private List<QuestAction> actorLoadActions;
-        private List<QuestAction> allPeriodQuestsCompleteActions;
+        private ActionChain questStartActions;
+        private ActionChain questCompleteActions;
+        private ActionChain objectiveProgressActions;
+        private ActionChain objectiveCompleteActions;
+        private ActionChain questDistributionActions;
+        private ActionChain actorLoadActions;
+        private ActionChain allPeriodQuestsCompleteActions;
+        private @Nullable String objectiveLine;
 
         private @Nullable Map<String, QuestTierConfig> tiers;
         private @Nullable Map<String, Integer> tierDistribution;
@@ -339,13 +393,28 @@ public class QuestGroupConfig implements PlaceholderProvider {
             this.name = name;
             this.description = description;
             this.actorType = actorType;
-            this.questStartActions = new ArrayList<>();
-            this.questCompleteActions = new ArrayList<>();
-            this.objectiveProgressActions = new ArrayList<>();
-            this.objectiveCompleteActions = new ArrayList<>();
-            this.questDistributionActions = new ArrayList<>();
-            this.actorLoadActions = new ArrayList<>();
-            this.allPeriodQuestsCompleteActions = new ArrayList<>();
+            this.questStartActions = ActionChain.EMPTY;
+            this.questCompleteActions = ActionChain.EMPTY;
+            this.objectiveProgressActions = ActionChain.EMPTY;
+            this.objectiveCompleteActions = ActionChain.EMPTY;
+            this.questDistributionActions = ActionChain.EMPTY;
+            this.actorLoadActions = ActionChain.EMPTY;
+            this.allPeriodQuestsCompleteActions = ActionChain.EMPTY;
+        }
+
+        public Builder uid(@Nullable String uid) {
+            this.uid = uid;
+            return this;
+        }
+
+        public Builder sourceProject(@Nullable String sourceProject) {
+            this.sourceProject = sourceProject;
+            return this;
+        }
+
+        public Builder resetZone(@Nullable ZoneId resetZone) {
+            this.resetZone = resetZone;
+            return this;
         }
 
         public Builder startAt(Instant startAt) {
@@ -373,38 +442,43 @@ public class QuestGroupConfig implements PlaceholderProvider {
             return this;
         }
 
-        public  Builder questStartActions(List<QuestAction> questStartActions) {
+        public Builder questStartActions(ActionChain questStartActions) {
             this.questStartActions = questStartActions;
             return this;
         }
 
-        public Builder questCompleteActions(List<QuestAction> questCompleteActions) {
+        public Builder questCompleteActions(ActionChain questCompleteActions) {
             this.questCompleteActions = questCompleteActions;
             return this;
         }
 
-        public Builder objectiveProgressActions(List<QuestAction> objectiveProgressActions) {
+        public Builder objectiveProgressActions(ActionChain objectiveProgressActions) {
             this.objectiveProgressActions = objectiveProgressActions;
             return this;
         }
 
-        public Builder objectiveCompleteActions(List<QuestAction> objectiveCompleteActions) {
+        public Builder objectiveCompleteActions(ActionChain objectiveCompleteActions) {
             this.objectiveCompleteActions = objectiveCompleteActions;
             return this;
         }
 
-        public Builder questDistributionActions(List<QuestAction> questDistributionActions) {
+        public Builder questDistributionActions(ActionChain questDistributionActions) {
             this.questDistributionActions = questDistributionActions;
             return this;
         }
 
-        public Builder actorLoadActions(List<QuestAction> actorLoadActions) {
+        public Builder actorLoadActions(ActionChain actorLoadActions) {
             this.actorLoadActions = actorLoadActions;
             return this;
         }
 
-        public Builder allPeriodQuestsCompleteActions(List<QuestAction> allPeriodQuestsCompleteActions) {
+        public Builder allPeriodQuestsCompleteActions(ActionChain allPeriodQuestsCompleteActions) {
             this.allPeriodQuestsCompleteActions = allPeriodQuestsCompleteActions;
+            return this;
+        }
+
+        public Builder objectiveLine(@Nullable String objectiveLine) {
+            this.objectiveLine = objectiveLine;
             return this;
         }
 

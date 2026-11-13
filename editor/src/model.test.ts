@@ -1,0 +1,393 @@
+import { type EditorHost, installEditorHost } from "@artisan/editor-sdk";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  type QuestGroup,
+  freeKey,
+  joinChain,
+  legacyLabel,
+  newObjectiveKey,
+  newUid,
+  parseQuestGroup,
+  questGroupTextSites,
+  rewardSteps,
+  serializeQuestGroup,
+  slugKey,
+  splitChain,
+  typedKey,
+} from "./model";
+import {
+  itemValue,
+  missingParams,
+  objectiveSpec,
+  objectiveSubject,
+  objectiveTarget,
+  writeItemParam,
+} from "./objectives";
+
+/** The host's text store, reduced to what the codec reads. */
+let n = 0;
+let texts: Record<string, Record<string, string>> = {};
+const project = { defaultLang: "fr" };
+
+beforeEach(() => {
+  n = 0;
+  texts = {};
+  installEditorHost({
+    newTextKey: () => `k${++n}`,
+    fieldText: (_p: unknown, key: string) => {
+      const entry = texts[key] ?? {};
+      const langs = Object.keys(entry);
+      if (langs.length === 0 || (langs.length === 1 && langs[0] === "fr")) return entry.fr ?? "";
+      return { ...entry };
+    },
+  } as unknown as EditorHost);
+});
+
+const daily = {
+  id: "daily",
+  schema: "quest_group/v1",
+  uid: "01JQ8AAAAAAAAAAAAAAAAAAAAA",
+  title: { fr: "Quêtes journalières", en: "Daily quests" },
+  actor_type: "player",
+  window: { start: "2024-01-01T00:00:00Z" },
+  reset: { cron: "0 4 * * *", timezone: "Europe/Paris" },
+  limits: { max_active: 6, max_per_period: 6 },
+  rotation: { enabled: true, max_per_period: 2 },
+  distribution: {
+    strategy: "random",
+    amount: 6,
+    triggers: ["actor_load", "period_reset"],
+    tiers: { easy: 3 },
+  },
+  tiers: { easy: { title: { fr: "<green>Facile" } } },
+  actions: { quest_complete: [{ type: "command", command: "say done" }] },
+  quests: [
+    {
+      key: "mine_stone_64",
+      uid: "01JQ9AAAAAAAAAAAAAAAAAAAAA",
+      tier: "easy",
+      title: { fr: "Apprenti carrier", en: "Apprentice quarrier" },
+      description: "Mine 64 blocs de pierre",
+      duration: "24h",
+      stages: [
+        {
+          key: "mining",
+          title: { fr: "Minage" },
+          flow: "parallel",
+          objectives: [{ key: "stone", type: "block_break", material: "STONE", amount: 64 }],
+        },
+      ],
+      actions: { complete: [{ type: "command", command: "levels addxp {player} 150" }] },
+      requirements: [{ type: "permission", permission: "quests.vip" }],
+    },
+  ],
+};
+
+function roundTrip(src: Record<string, unknown>) {
+  const r = parseQuestGroup(src, { projectId: "p", lang: "fr" });
+  Object.assign(texts, r.i18nKeys);
+  return { r, out: serializeQuestGroup(r.doc as QuestGroup, project) };
+}
+
+describe("quest_group codec", () => {
+  it("round-trips a production group without losing a field", () => {
+    const { r, out } = roundTrip(daily);
+    expect(r.unsupported).toEqual([]);
+    // A text in the default language alone is written as a bare string (ADR `field-local-translations`).
+    const quest = daily.quests[0]!;
+    expect(out).toEqual({
+      ...daily,
+      tiers: { easy: { title: "<green>Facile" } },
+      quests: [{ ...quest, stages: [{ ...quest.stages[0], title: "Minage" }] }],
+    });
+  });
+
+  it("writes the canonical key order the server's files use", () => {
+    const { out } = roundTrip(daily);
+    expect(Object.keys(out)).toEqual([
+      "id",
+      "schema",
+      "uid",
+      "title",
+      "actor_type",
+      "window",
+      "reset",
+      "limits",
+      "rotation",
+      "distribution",
+      "tiers",
+      "actions",
+      "quests",
+    ]);
+  });
+
+  it("turns each text into a node and keeps its languages", () => {
+    const { r } = roundTrip(daily);
+    const group = r.doc as QuestGroup;
+    expect(texts[group.title.key]).toEqual({ fr: "Quêtes journalières", en: "Daily quests" });
+    expect(texts[group.quests[0]!.description.key]).toEqual({ fr: "Mine 64 blocs de pierre" });
+  });
+
+  it("resolves an `{i18n:key}` ref against the project's translations", () => {
+    const r = parseQuestGroup(
+      { ...daily, title: "{i18n:common.daily}" },
+      { projectId: "p", lang: "fr", translations: { "common.daily": { fr: "Jour" } } },
+    );
+    expect((r.doc as QuestGroup).title.key).toBe("common.daily");
+    expect(r.i18nKeys["common.daily"]).toEqual({ fr: "Jour" });
+  });
+
+  it("drops what was cleared and keeps an empty group's quest list", () => {
+    const { r } = roundTrip({
+      id: "empty",
+      schema: "quest_group/v1",
+      uid: "U",
+      title: "Vide",
+      actor_type: "player",
+    });
+    const group = r.doc as QuestGroup;
+    group.limits.max_active = undefined;
+    expect(serializeQuestGroup(group, project)).toEqual({
+      id: "empty",
+      schema: "quest_group/v1",
+      uid: "U",
+      title: "Vide",
+      actor_type: "player",
+      quests: [],
+    });
+  });
+
+  it("gives a uid to what has none and reports a foreign schema", () => {
+    const r = parseQuestGroup(
+      { id: "x", schema: "quest_group/v9", quests: [{ key: "a" }] },
+      { projectId: "p", lang: "fr" },
+    );
+    const group = r.doc as QuestGroup;
+    expect(group.uid).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(group.quests[0]!.uid).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(r.unsupported).toEqual(["schema: quest_group/v9"]);
+  });
+});
+
+describe("text sites", () => {
+  it("addresses quests by uid and stages by key, so a reorder moves no text", () => {
+    const { r } = roundTrip(daily);
+    const keys = [...questGroupTextSites(r.doc as QuestGroup)].map((s) => s.key);
+    expect(keys).toEqual([
+      "quest_groups.daily.title",
+      "quest_groups.daily.description",
+      "quest_groups.daily.tiers.easy.title",
+      "quest_groups.daily.quests.01JQ9AAAAAAAAAAAAAAAAAAAAA.title",
+      "quest_groups.daily.quests.01JQ9AAAAAAAAAAAAAAAAAAAAA.description",
+      "quest_groups.daily.quests.01JQ9AAAAAAAAAAAAAAAAAAAAA.stages.mining.title",
+    ]);
+  });
+
+  it("never gives two sites the same key, even from a hand-edited file", () => {
+    const quest = daily.quests[0]!;
+    const { r } = roundTrip({ ...daily, quests: [quest, quest] });
+    const keys = [...questGroupTextSites(r.doc as QuestGroup)].map((s) => s.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("keys and ids", () => {
+  it("mints time-ordered ULIDs", () => {
+    expect(newUid(0) < newUid(1_000_000)).toBe(true);
+    expect(newUid()).toHaveLength(26);
+  });
+
+  it("makes typed keys safe and unique", () => {
+    expect(slugKey("Mine la Pierre ! ")).toBe("mine_la_pierre");
+    expect(slugKey("éé")).toBe("ee");
+    expect(slugKey("!!")).toBe("quest");
+    expect(typedKey("Mine ")).toBe("mine_");
+    expect(freeKey("quest", ["quest", "quest_2"])).toBe("quest_3");
+  });
+});
+
+describe("quest actions at completion", () => {
+  it("reads the former `on` keys as `actions`", () => {
+    const steps = [{ send_message: "gg" }];
+    const { out } = roundTrip({
+      ...daily,
+      actions: undefined,
+      on: { quest_complete: steps },
+      quests: [{ ...daily.quests[0], actions: undefined, on: { complete: steps } }],
+    });
+    expect(out.actions).toEqual({ quest_complete: steps });
+    expect(out).not.toHaveProperty("on");
+    const quest = (out.quests as Record<string, unknown>[])[0]!;
+    expect(quest.actions).toEqual({ complete: steps });
+    expect(quest).not.toHaveProperty("on");
+  });
+
+  it("treats a null `actions` as absent, like the server", () => {
+    const steps = [{ send_message: "gg" }];
+    const { out } = roundTrip({
+      ...daily,
+      actions: null,
+      on: { quest_complete: steps },
+      quests: [{ ...daily.quests[0], actions: { complete: null }, rewards: steps }],
+    });
+    expect(out.actions).toEqual({ quest_complete: steps });
+    expect((out.quests as Record<string, unknown>[])[0]!.actions).toEqual({ complete: steps });
+  });
+
+  it("reads the former `rewards` as actions.complete and drops reward_display", () => {
+    const steps = [{ run_command: { command: "levels addxp {actor_name} 150" } }];
+    const { out } = roundTrip({
+      ...daily,
+      quests: [{ ...daily.quests[0], actions: undefined, rewards: steps, reward_display: ["+150 XP"] }],
+    });
+    const quest = (out.quests as Record<string, unknown>[])[0]!;
+    expect(quest.actions).toEqual({ complete: steps });
+    expect(quest).not.toHaveProperty("rewards");
+    expect(quest).not.toHaveProperty("reward_display");
+  });
+});
+
+describe("rewards (Artisan chain steps)", () => {
+  it("hands the keyed steps to the chain editor and keeps legacy ones apart", () => {
+    const legacy = { type: "command", command: "say hi" };
+    const { chain, legacy: kept } = splitChain([{ give_item: "DIAMOND" }, legacy, "close"]);
+    expect(chain).toEqual([{ give_item: "DIAMOND" }, "close"]);
+    expect(kept).toEqual([legacy]);
+    expect(joinChain([{ send_message: "gg" }], kept)).toEqual([{ send_message: "gg" }, legacy]);
+    expect(legacyLabel(legacy)).toBe("command · say hi");
+  });
+  it("reads one step alone and writes nothing for an empty chain", () => {
+    expect(splitChain({ give_item: "DIAMOND" }).chain).toEqual([{ give_item: "DIAMOND" }]);
+    expect(splitChain(undefined)).toEqual({ chain: [], legacy: [] });
+    expect(joinChain([], [])).toBeUndefined();
+    expect(rewardSteps({ give_item: "DIAMOND" })).toEqual([{ give_item: "DIAMOND" }]);
+  });
+});
+
+describe("objectives", () => {
+  it("keys a new objective by its type and a random suffix, never a taken key", () => {
+    const key = newObjectiveKey("block_break", ["block_break"]);
+    expect(key).toMatch(/^block_break_[0-9a-z]{4}$/);
+    expect(newObjectiveKey("block_break", [key])).not.toBe(key);
+  });
+
+  it("says what an objective asks and what it lacks", () => {
+    expect(objectiveSubject("deliver_item", { material: "COPPER_BLOCK", amount: 6912 })).toBe(
+      "COPPER_BLOCK",
+    );
+    expect(objectiveTarget({ distance: 500 })).toBe(500);
+    expect(missingParams("harvest_crop", { amount: 1 })).toEqual(["crop"]);
+    expect(missingParams("block_break", { amount: 1 })).toEqual([]);
+    expect(objectiveSubject("custom", { zone: "spawn", amount: 2 })).toBe("spawn");
+  });
+
+  it("reads an objective's item, the legacy bare material included", () => {
+    const spec = objectiveSpec("fishing")!.params[0]!;
+    expect(itemValue({ fish_type: "COD" }, spec)).toEqual({ material: "COD" });
+    expect(itemValue({ item: { material: "item:rod" }, fish_type: "COD" }, spec)).toEqual({
+      material: "item:rod",
+    });
+    expect(itemValue({ amount: 1 }, spec)).toEqual({});
+    expect(
+      objectiveSubject("craft_item", { item: { material: "DIAMOND_SWORD", title: "<red>Excalibur" } }),
+    ).toBe("Excalibur");
+    expect(objectiveSubject("fishing", { item: { material: "nexo:ruby_fish" } })).toBe("nexo:ruby_fish");
+  });
+
+  it("writes an item over the legacy material, and clears it to any item", () => {
+    const spec = objectiveSpec("fishing")!.params[0]!;
+    const params: Record<string, unknown> = { fish_type: "COD", amount: 2 };
+    writeItemParam(params, spec, { material: "COD", enchants: { lure: 3 } }, ["material", "enchants"]);
+    expect(params).toEqual({
+      amount: 2,
+      item: { material: "COD", enchants: { lure: 3 } },
+      match: ["material", "enchants"],
+    });
+    writeItemParam(params, spec, params.item as Record<string, unknown>, undefined);
+    expect(params.match).toBeUndefined();
+    writeItemParam(params, spec, {}, ["material"]);
+    expect(params).toEqual({ amount: 2 });
+  });
+});
+
+describe("the group's board node", () => {
+  const host = (texts: Record<string, string>) =>
+    installEditorHost({
+      text: (_p: unknown, key: string) => texts[key] ?? "",
+    } as unknown as EditorHost);
+  const quest = (uid: string, key: string, tier: string, stages: unknown[] = []) => ({
+    uid,
+    key,
+    tier,
+    title: { key: `${uid}.title` },
+    description: { key: `${uid}.desc` },
+    stages,
+  });
+
+  it("lists one row per quest, titled, keyed by its uid, the objectives in its tooltip", async () => {
+    const { questGroupKind } = await import("./questGroupKind");
+    host({ "U1.title": "<gold>Miner", "U1.desc": "Dig a little" });
+    const doc = {
+      distribution: {},
+      quests: [
+        quest("U1", "mine", "easy", [
+          {
+            title: { key: "s1" },
+            objectives: [{ key: "o1", type: "break_block", params: { amount: 64 } }],
+          },
+        ]),
+        quest("U2", "fish", ""),
+      ],
+    };
+    const rows = questGroupKind.board?.items?.(doc, { project: {}, lang: "en" });
+    expect(rows?.map((r) => [r.id, r.label, r.detail, r.marker])).toEqual([
+      ["U1", "Miner", "easy", undefined],
+      ["U2", "fish", undefined, undefined],
+    ]);
+    expect(rows?.[0]?.hover?.title).toBe("<gold>Miner");
+    expect(rows?.[0]?.hover?.text).toBe("Dig a little");
+    expect(rows?.[0]?.hover?.lines).toHaveLength(1);
+    expect(rows?.[0]?.hover?.lines?.[0]).toContain("0/64");
+  });
+
+  it("shows a quest's first objective under its title, with how many follow", async () => {
+    const { questGroupKind } = await import("./questGroupKind");
+    host({});
+    const objective = (key: string, amount: number) => ({
+      key,
+      type: "break_block",
+      params: { amount },
+    });
+    const doc = {
+      distribution: {},
+      quests: [
+        quest("U1", "one", "", [{ title: { key: "s1" }, objectives: [objective("o1", 64)] }]),
+        quest("U2", "three", "", [
+          { title: { key: "s1" }, objectives: [objective("o1", 8), objective("o2", 2)] },
+          { title: { key: "s2" }, objectives: [objective("o3", 1)] },
+        ]),
+        quest("U3", "none", ""),
+      ],
+    };
+    const captions = questGroupKind.board
+      ?.items?.(doc, { project: {}, lang: "en" })
+      .map((r) => r.caption);
+    expect(captions?.[0]).toMatch(/0\/64$/);
+    expect(captions?.[1]).toMatch(/0\/8 \+2$/);
+    expect(captions?.[2]).toBeUndefined();
+  });
+
+  it("numbers the quests when the group hands them out in list order", async () => {
+    const { questGroupKind } = await import("./questGroupKind");
+    host({});
+    const doc = {
+      distribution: { strategy: "SEQUENTIAL" },
+      quests: [quest("U1", "a", ""), quest("U2", "b", "")],
+    };
+    const rows = questGroupKind.board?.items?.(doc, { project: {}, lang: "fr" });
+    expect(rows?.map((r) => r.marker)).toEqual(["1", "2"]);
+    expect(questGroupKind.board?.summary?.(doc, { project: {}, lang: "fr" })).toBe(
+      "2 quêtes · dans l'ordre de la liste",
+    );
+  });
+});

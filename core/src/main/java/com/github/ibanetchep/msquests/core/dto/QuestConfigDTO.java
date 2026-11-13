@@ -1,5 +1,6 @@
 package com.github.ibanetchep.msquests.core.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -11,12 +12,30 @@ public record QuestConfigDTO(
         String description,
         Long duration,
         String tier,
-        List<QuestActionDTO> rewards,
+        // An Artisan action chain, keyed steps (see ActionChain).
+        List<Object> rewards,
         List<QuestStageConfigDTO> stages,
-        @Nullable List<ConditionConfigDTO> conditions
+        // Artisan conditions, keyed (see Conditions).
+        @Nullable List<Object> requirements,
+        // quest_group Documents only, see QuestGroupConfigDTO#uid.
+        @JsonIgnore String uid,
+        // quest_group Documents only: actions.start / objective_progress / objective_complete.
+        @JsonIgnore @Nullable QuestConfigHooksDTO hooks
 ) {
+    public QuestConfigDTO(String key, String name, String description, Long duration, String tier,
+                          List<Object> rewards,
+                          List<QuestStageConfigDTO> stages, @Nullable List<Object> requirements) {
+        this(key, name, description, duration, tier, rewards, stages, requirements, null, null);
+    }
+
+    public QuestConfigDTO(String key, String name, String description, Long duration, String tier,
+                          List<Object> rewards, List<QuestStageConfigDTO> stages,
+                          @Nullable List<Object> requirements, String uid) {
+        this(key, name, description, duration, tier, rewards, stages, requirements, uid, null);
+    }
+
     /**
-     * Compact constructor avec validation
+     * Compact constructor with validation
      */
     public QuestConfigDTO {
         if (key == null || key.isBlank()) {
@@ -29,7 +48,7 @@ public record QuestConfigDTO(
     }
 
     /**
-     * Valide l'unicité des clés dans une liste
+     * Validates key uniqueness in a list
      */
     private static void validateUniqueKeys(String key, List<QuestStageConfigDTO> items, String itemType) {
         Set<String> keys = new HashSet<>();
@@ -50,7 +69,7 @@ public record QuestConfigDTO(
     }
 
     /**
-     * Helper pour accéder à un stage par clé
+     * Helper to access a stage by key
      */
     public QuestStageConfigDTO getStage(String key) {
         return stages == null ? null : stages.stream()
@@ -60,7 +79,7 @@ public record QuestConfigDTO(
     }
 
     /**
-     * Helper pour obtenir une Map (pour accès rapide)
+     * Helper to get a Map (for fast access)
      */
     public Map<String, QuestStageConfigDTO> stagesAsMap() {
         return stages == null ? Map.of() : stages.stream()

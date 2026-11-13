@@ -37,32 +37,51 @@ public class CronUtils {
     }
 
     public static Instant getNextExecution(String cronExpression, Instant from) {
-        if (cronExpression == null || from == null) {
-            return null;
-        }
-        return getNextExecution(schedule(cronExpression), from);
+        return getNextExecution(cronExpression, from, null);
     }
 
     public static Instant getPreviousExecution(String cronExpression, Instant from) {
+        return getPreviousExecution(cronExpression, from, null);
+    }
+
+    /** @param zone the zone the cron is read in; null reads it in the server's zone, as before groups could name one */
+    public static Instant getNextExecution(String cronExpression, Instant from, ZoneId zone) {
         if (cronExpression == null || from == null) {
             return null;
         }
-        return getPreviousExecution(schedule(cronExpression), from);
+        return getNextExecution(schedule(cronExpression), from, zone);
+    }
+
+    public static Instant getPreviousExecution(String cronExpression, Instant from, ZoneId zone) {
+        if (cronExpression == null || from == null) {
+            return null;
+        }
+        return getPreviousExecution(schedule(cronExpression), from, zone);
     }
 
     public static Instant getNextExecution(ExecutionTime schedule, Instant from) {
-        if (schedule == null || from == null) {
-            return null;
-        }
-        ZonedDateTime fromZoned = from.atZone(ZoneId.systemDefault());
-        return schedule.nextExecution(fromZoned).map(ZonedDateTime::toInstant).orElse(null);
+        return getNextExecution(schedule, from, null);
     }
 
     public static Instant getPreviousExecution(ExecutionTime schedule, Instant from) {
+        return getPreviousExecution(schedule, from, null);
+    }
+
+    /** @param zone the zone the schedule is read in; null reads it in the server's zone */
+    public static Instant getNextExecution(ExecutionTime schedule, Instant from, ZoneId zone) {
         if (schedule == null || from == null) {
             return null;
         }
-        ZonedDateTime fromZoned = from.atZone(ZoneId.systemDefault());
+        ZonedDateTime fromZoned = from.atZone(zone != null ? zone : ZoneId.systemDefault());
+        return schedule.nextExecution(fromZoned).map(ZonedDateTime::toInstant).orElse(null);
+    }
+
+    /** @param zone the zone the schedule is read in; null reads it in the server's zone */
+    public static Instant getPreviousExecution(ExecutionTime schedule, Instant from, ZoneId zone) {
+        if (schedule == null || from == null) {
+            return null;
+        }
+        ZonedDateTime fromZoned = from.atZone(zone != null ? zone : ZoneId.systemDefault());
         return schedule.lastExecution(fromZoned).map(ZonedDateTime::toInstant).orElse(null);
     }
 }

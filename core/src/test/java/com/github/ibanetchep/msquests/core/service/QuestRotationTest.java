@@ -1,5 +1,6 @@
 package com.github.ibanetchep.msquests.core.service;
 
+import com.github.ibanetchep.msquests.core.quest.config.action.ChainRunner;
 import com.github.ibanetchep.msquests.core.event.EventDispatcher;
 import com.github.ibanetchep.msquests.core.factory.QuestFactory;
 import com.github.ibanetchep.msquests.core.platform.MSQuestsPlatform;
@@ -75,7 +76,7 @@ class QuestRotationTest {
 
         QuestLifecycleService service = new QuestLifecycleService(
                 mock(EventDispatcher.class), persistence, factory, registry, mock(QuestConfigRegistry.class),
-                mock(AtomicQuestExecutor.class), distribution, rotations, mock(MSQuestsPlatform.class));
+                mock(AtomicQuestExecutor.class), distribution, rotations, mock(MSQuestsPlatform.class), mock(ChainRunner.class));
 
         QuestRotateResult result = assertTimeoutPreemptively(Duration.ofSeconds(2),
                 () -> service.rotateQuest(actor, current));

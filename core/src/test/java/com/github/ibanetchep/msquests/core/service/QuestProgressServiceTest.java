@@ -102,7 +102,8 @@ class QuestProgressServiceTest {
         when(lifecycleService.completeObjective(any(), any())).thenAnswer(
                 invocation -> CompletableFuture.completedFuture(null));
 
-        progressService = new QuestProgressService(lifecycleService, questService, dispatcher, questRegistry);
+        progressService = new QuestProgressService(lifecycleService, questService, dispatcher, questRegistry,
+                com.github.ibanetchep.msquests.core.quest.config.action.ChainRunner.NOOP);
 
         groupConfig = new QuestGroupConfig.Builder("group", "Group", "desc", "player").build();
         questConfig = new QuestConfig("quest", "Quest", "desc", 0);
@@ -177,5 +178,31 @@ class QuestProgressServiceTest {
 
         assertEquals(5, objective.getProgress(), "hitting the target must flush without waiting for the timer");
         verify(lifecycleService).completeObjective(objective, null);
+    }
+
+    @Test
+    void aCancelledContributionTakesNothing() {
+        TestObjective objective = buildRegisteredQuest(UUID.randomUUID(), "obj", 0, 10);
+        doAnswer(invocation -> {
+            ((com.github.ibanetchep.msquests.core.event.CoreQuestObjectiveProgressEvent) invocation.getArgument(0)).setCancelled(true);
+            return null;
+        }).when(dispatcher).dispatch(any(com.github.ibanetchep.msquests.core.event.CoreQuestObjectiveProgressEvent.class));
+        java.util.concurrent.atomic.AtomicBoolean taken = new java.util.concurrent.atomic.AtomicBoolean();
+
+        boolean allowed = progressService.contributeNow(objective, () -> { taken.set(true); return 4; }, null);
+
+        assertEquals(false, allowed);
+        assertEquals(false, taken.get(), "nothing is taken from the player when the progress is refused");
+        assertEquals(0, objective.getProgress());
+    }
+
+    @Test
+    void anAllowedContributionIsPersistedRightAway() {
+        TestObjective objective = buildRegisteredQuest(UUID.randomUUID(), "obj", 0, 10);
+
+        assertEquals(true, progressService.contributeNow(objective, () -> 4, null));
+
+        assertEquals(4, objective.getProgress());
+        verify(questService).saveQuest(objective.getQuest());
     }
 }

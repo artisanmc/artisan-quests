@@ -1,6 +1,9 @@
 package com.github.ibanetchep.msquests.bukkit.artisan;
 
 import com.github.ibanetchep.msquests.bukkit.BukkitQuestsPlugin;
+import com.github.ibanetchep.msquests.bukkit.event.BukkitEventDispatcher;
+import com.github.ibanetchep.msquests.bukkit.placeholder.QuestPlaceholders;
+import com.github.ibanetchep.msquests.bukkit.quest.objective.ContributableObjective;
 import com.github.ibanetchep.msquests.bukkit.text.MessageBuilder;
 import com.github.ibanetchep.msquests.core.lang.TranslationKey;
 import com.github.ibanetchep.msquests.core.lang.Translator;
@@ -10,34 +13,53 @@ import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
+import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
 import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.ActorResolver;
 import net.artisanmc.modules.api.ArtisanAPI;
 import net.artisanmc.modules.api.ArtisanModule;
-import net.artisanmc.modules.api.CommandDeclaration;
-import net.artisanmc.modules.api.DataReloadEvent;
-import net.artisanmc.modules.api.DataSourceDeclaration;
-import net.artisanmc.modules.api.DataSourceField;
-import net.artisanmc.modules.api.FieldKind;
-import net.artisanmc.modules.api.PlayerRequiredException;
-import net.artisanmc.modules.api.Stability;
+import net.artisanmc.modules.api.action.ActionDeclaration;
+import net.artisanmc.modules.api.command.CommandDeclaration;
+import net.artisanmc.modules.api.datasource.DataReloadEvent;
+import net.artisanmc.modules.api.datasource.DataSourceDeclaration;
+import net.artisanmc.modules.api.datasource.DataSourceField;
+import net.artisanmc.modules.api.model.ModelFieldType;
+import net.artisanmc.modules.api.datasource.PlayerRequiredException;
+import net.artisanmc.modules.api.datasource.Stability;
+import net.artisanmc.modules.api.document.DocumentKindDeclaration;
+import net.artisanmc.modules.api.editor.EditorBundleDeclaration;
+import net.artisanmc.modules.api.gameevent.GameEventDeclaration;
+import net.artisanmc.modules.api.template.TemplateDeclaration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.logging.Level;
 
 /**
- * Exposes MSQuests to Artisan menus: three data sources and the two commands their
- * buttons need. Read-only on the config side — quest authoring stays in {@code quests/*.yml}
- * for now (Artisan config screens are the next step).
+ * MSQuests inside Artisan:
+ * <ul>
+ *   <li>an example template, {@code daily} ({@link #TEMPLATE}): quests any project can copy from
+ *       the editor, seeded once into the module's folder {@code quests} ({@link EditorProject});</li>
+ *   <li>the {@code quest_group} Document kind ({@code quest_groups/}, {@code quest_group/v1}): one
+ *       Document per group, which the quests load from with {@code content_source: artisan}
+ *       ({@code /msquests migrate} converts {@code quests/*.yml} into them);</li>
+ *   <li>its editor view, {@code artisan-editor/ui.js} built from {@code editor/}, which the Artisan
+ *       editor loads for the {@code quest_group} kind;</li>
+ *   <li>the {@code quests:*} actions ({@link QuestActions});</li>
+ *   <li>the {@code %quests_*%} placeholders ({@code QuestPlaceholders}), also given to
+ *       PlaceholderAPI when it is installed;</li>
+ *   <li>three data sources and the two commands menu buttons used before the actions existed.</li>
+ * </ul>
  *
  * <p>Every fetcher serves from the in-memory registries only: they run on the main thread
  * at menu render time, so no repository call is allowed here.
@@ -48,15 +70,28 @@ import java.util.function.Function;
  *       Absent → the viewer.</li>
  *   <li>{@code actor} — which actor's quests to read: {@code player} (default),
  *       {@code global}, or any other registered actor type.</li>
- *   <li>{@code group} — restrict to one quest group ({@code artisanquests:quests} and
- *       {@code artisanquests:active}).</li>
+ *   <li>{@code group} — restrict to one quest group ({@code msquests:quests} and
+ *       {@code msquests:active}).</li>
  * </ul>
  */
 public final class MsQuestsArtisanModule implements ArtisanModule {
 
-    static final String GROUPS = "artisanquests:groups";
-    static final String QUESTS = "artisanquests:quests";
-    static final String ACTIVE = "artisanquests:active";
+    static final String GROUPS = "msquests:groups";
+    static final String QUESTS = "msquests:quests";
+    static final String ACTIVE = "msquests:active";
+
+    static final String GROUP_DIR = "quest_groups";
+    static final String GROUP_SCHEMA = "quest_group/v1";
+
+    /** Built by {@code editor/} ({@code npm run build}); the SDK version its build prints. */
+    static final String EDITOR_BUNDLE = "artisan-editor/ui.js";
+    static final String EDITOR_SDK = "1.10.0";
+
+    /** The example quests: raise {@link #TEMPLATE_VERSION} whenever its files change. */
+    static final String TEMPLATE = "daily";
+    static final int TEMPLATE_VERSION = 1;
+    static final String TEMPLATE_ROOT = "artisan-templates/daily";
+    static final List<String> TEMPLATE_FILES = List.of("quest_groups/example_daily.yaml");
 
     private final BukkitQuestsPlugin plugin;
     private final ActorResolver actors;
@@ -69,17 +104,31 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
     @Override
     public String getId() {
-        return "artisanquests";
+        return "msquests";
     }
 
     @Override
     public String getSchemaVersion() {
-        return "artisanquests/v1";
+        return "msquests/v1";
     }
 
     @Override
     public void onEnable(ArtisanAPI api) {
         this.api = api;
+
+        api.getDocumentKinds().register(new DocumentKindDeclaration(
+                QuestActions.GROUP_KIND, GROUP_DIR, List.of(GROUP_SCHEMA), null));
+        registerFolder(api);
+        registerTemplate(api);
+        registerEditorBundle(api);
+
+        QuestActions actions = new QuestActions(plugin);
+        for (ActionDeclaration declaration : actions.declarations()) {
+            api.getActionRegistry().register(declaration);
+        }
+
+        registerPlaceholders(api);
+        registerGameEvents(api);
 
         // STATIC: the key-set is the loaded configuration, enumerable without a player,
         // so a menu can place "the daily group" on a specific slot. Only the per-actor
@@ -88,20 +137,19 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                 GROUPS,
                 (player, params) -> groupRows(player, params),
                 List.of(
-                        new DataSourceField("key", FieldKind.STRING, "Group key"),
-                        new DataSourceField("name", FieldKind.STRING, null),
-                        new DataSourceField("description", FieldKind.STRING, null),
-                        new DataSourceField("actor_type", FieldKind.STRING, "PLAYER / GLOBAL / …"),
-                        new DataSourceField("max_active", FieldKind.INTEGER, null),
-                        new DataSourceField("max_per_period", FieldKind.INTEGER, null),
-                        new DataSourceField("rotatable", FieldKind.BOOLEAN, null),
-                        new DataSourceField("period_end", FieldKind.INTEGER,
+                        new DataSourceField("key", ModelFieldType.string(), "Group key"),
+                        new DataSourceField("name", ModelFieldType.string(), null),
+                        new DataSourceField("description", ModelFieldType.string(), null),
+                        new DataSourceField("actor_type", ModelFieldType.string(), "PLAYER / GLOBAL / …"),
+                        new DataSourceField("max_active", ModelFieldType.integer(), null),
+                        new DataSourceField("max_per_period", ModelFieldType.integer(), null),
+                        new DataSourceField("rotatable", ModelFieldType.bool(), null),
+                        new DataSourceField("period_end", ModelFieldType.integer(),
                                 "End of the current period, epoch millis — render with {period_end.until()}"),
-                        new DataSourceField("active_count", FieldKind.INTEGER, "Quests in progress for the actor"),
-                        new DataSourceField("completed_count", FieldKind.INTEGER, null),
-                        new DataSourceField("can_rotate", FieldKind.BOOLEAN, null),
-                        new DataSourceField("quests", FieldKind.LIST, "Nested artisanquests:quests rows")),
-                null,
+                        new DataSourceField("active_count", ModelFieldType.integer(), "Quests in progress for the actor"),
+                        new DataSourceField("completed_count", ModelFieldType.integer(), null),
+                        new DataSourceField("can_rotate", ModelFieldType.bool(), null),
+                        new DataSourceField("quests", ModelFieldType.list(ModelFieldType.string()), "Nested msquests:quests rows")),
                 Stability.STATIC,
                 "key"));
 
@@ -109,35 +157,33 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                 QUESTS,
                 (player, params) -> questRows(player, params),
                 List.of(
-                        new DataSourceField("id", FieldKind.STRING, "group:key — unique across groups"),
-                        new DataSourceField("group", FieldKind.STRING, null),
-                        new DataSourceField("key", FieldKind.STRING, null),
-                        new DataSourceField("name", FieldKind.STRING, null),
-                        new DataSourceField("description", FieldKind.STRING, null),
-                        new DataSourceField("duration", FieldKind.INTEGER, "Seconds"),
-                        new DataSourceField("tier", FieldKind.STRING, null),
-                        new DataSourceField("tier_name", FieldKind.STRING, null),
-                        new DataSourceField("assigned", FieldKind.BOOLEAN,
+                        new DataSourceField("id", ModelFieldType.string(), "group:key — unique across groups"),
+                        new DataSourceField("group", ModelFieldType.string(), null),
+                        new DataSourceField("key", ModelFieldType.string(), null),
+                        new DataSourceField("name", ModelFieldType.string(), null),
+                        new DataSourceField("description", ModelFieldType.string(), null),
+                        new DataSourceField("duration", ModelFieldType.integer(), "Seconds"),
+                        new DataSourceField("tier", ModelFieldType.string(), null),
+                        new DataSourceField("tier_name", ModelFieldType.string(), null),
+                        new DataSourceField("assigned", ModelFieldType.bool(),
                                 "Handed to the actor for the current period — filter on it "
                                         + "to show only the player's quests"),
-                        new DataSourceField("status_key", FieldKind.STRING,
+                        new DataSourceField("status_key", ModelFieldType.string(),
                                 "Current attempt: NOT_STARTED / IN_PROGRESS / COMPLETED / FAILED"),
-                        new DataSourceField("status", FieldKind.STRING, "Translated status"),
-                        new DataSourceField("can_start", FieldKind.BOOLEAN,
+                        new DataSourceField("status", ModelFieldType.string(), "Translated status"),
+                        new DataSourceField("can_start", ModelFieldType.bool(),
                                 "May the actor start it right now"),
-                        new DataSourceField("start_blocker", FieldKind.STRING,
+                        new DataSourceField("start_blocker", ModelFieldType.string(),
                                 "Empty when can_start, else the QuestStartResult reason "
                                         + "(MAX_ACTIVE_REACHED, CONDITIONS_NOT_MET, …)"),
-                        new DataSourceField("start_blocker_label", FieldKind.STRING, "Translated reason"),
-                        new DataSourceField("objective_name", FieldKind.STRING, "Current objective"),
-                        new DataSourceField("objective_progress", FieldKind.INTEGER, "Raw — the menu formats it"),
-                        new DataSourceField("objective_target", FieldKind.INTEGER, null),
-                        new DataSourceField("progress_ratio", FieldKind.NUMBER, "0..1"),
-                        new DataSourceField("rewards", FieldKind.LIST, "type, name"),
-                        new DataSourceField("stages", FieldKind.LIST,
+                        new DataSourceField("start_blocker_label", ModelFieldType.string(), "Translated reason"),
+                        new DataSourceField("objective_name", ModelFieldType.string(), "Current objective"),
+                        new DataSourceField("objective_progress", ModelFieldType.integer(), "Raw — the menu formats it"),
+                        new DataSourceField("objective_target", ModelFieldType.integer(), null),
+                        new DataSourceField("progress_ratio", ModelFieldType.number(), "0..1"),
+                        new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()),
                                 "Configured tree: key, name, flow, index, completed, active, "
                                         + "progress_ratio, objectives[] — player progress laid over it")),
-                null,
                 Stability.STATIC,
                 "id"));
 
@@ -146,45 +192,125 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                 ACTIVE,
                 (player, params) -> activeRows(player, params),
                 List.of(
-                        new DataSourceField("id", FieldKind.STRING, "Quest instance UUID"),
-                        new DataSourceField("quest_key", FieldKind.STRING, null),
-                        new DataSourceField("group", FieldKind.STRING, null),
-                        new DataSourceField("name", FieldKind.STRING, null),
-                        new DataSourceField("description", FieldKind.STRING, null),
-                        new DataSourceField("assigned", FieldKind.BOOLEAN,
+                        new DataSourceField("id", ModelFieldType.string(), "Quest instance UUID"),
+                        new DataSourceField("quest_key", ModelFieldType.string(), null),
+                        new DataSourceField("group", ModelFieldType.string(), null),
+                        new DataSourceField("name", ModelFieldType.string(), null),
+                        new DataSourceField("description", ModelFieldType.string(), null),
+                        new DataSourceField("assigned", ModelFieldType.bool(),
                                 "Handed to the actor for the current period — filter on it "
                                         + "to show only the player's quests"),
-                        new DataSourceField("status_key", FieldKind.STRING, null),
-                        new DataSourceField("status", FieldKind.STRING, null),
-                        new DataSourceField("tracked", FieldKind.BOOLEAN, "Is the viewer's tracked quest"),
-                        new DataSourceField("stage_index", FieldKind.INTEGER, null),
-                        new DataSourceField("stage_count", FieldKind.INTEGER, null),
-                        new DataSourceField("stage_name", FieldKind.STRING, null),
-                        new DataSourceField("stage_flow", FieldKind.STRING, "PARALLEL / SEQUENTIAL"),
-                        new DataSourceField("progress_ratio", FieldKind.NUMBER, "0..1"),
-                        new DataSourceField("objectives", FieldKind.LIST, "Flattened across stages"),
-                        new DataSourceField("stages", FieldKind.LIST, "Same tree as artisanquests:quests"),
-                        new DataSourceField("expires_at", FieldKind.INTEGER, "Epoch millis, or 0")),
-                null,
+                        new DataSourceField("status_key", ModelFieldType.string(), null),
+                        new DataSourceField("status", ModelFieldType.string(), null),
+                        new DataSourceField("tracked", ModelFieldType.bool(), "Is the viewer's tracked quest"),
+                        new DataSourceField("stage_index", ModelFieldType.integer(), null),
+                        new DataSourceField("stage_count", ModelFieldType.integer(), null),
+                        new DataSourceField("stage_name", ModelFieldType.string(), null),
+                        new DataSourceField("stage_flow", ModelFieldType.string(), "PARALLEL / SEQUENTIAL"),
+                        new DataSourceField("progress_ratio", ModelFieldType.number(), "0..1"),
+                        new DataSourceField("objectives", ModelFieldType.list(ModelFieldType.string()), "Flattened across stages"),
+                        new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()), "Same tree as msquests:quests"),
+                        new DataSourceField("expires_at", ModelFieldType.integer(), "Epoch millis, or 0")),
                 Stability.DYNAMIC,
                 null));
 
-        api.getCommands().register(new CommandDeclaration("artisanquests:track", (player, args) -> track(player, argv(args))));
-        api.getCommands().register(new CommandDeclaration("artisanquests:rotate", (player, args) -> rotate(player, argv(args))));
+        api.getCommands().register(new CommandDeclaration("msquests:track",
+                (player, args) -> track(player, argv(args))));
+        api.getCommands().register(new CommandDeclaration("msquests:rotate",
+                (player, args) -> rotate(player, argv(args))));
+        api.getCommands().register(new CommandDeclaration("msquests:contribute",
+                (player, args) -> contribute(player, argv(args))));
+    }
+
+    /**
+     * {@code plugins/Artisan/modules/quests/}, the module's own folder: the editor lists it under
+     * the installed module, not among the admin's own. Before the template, which seeds it. The
+     * ordinary project {@code quests} of earlier versions is that folder already; a former
+     * {@code plugins/MSQuests/editor/} holding quest groups moves there once.
+     */
+    private void registerFolder(ArtisanAPI api) {
+        ArtisanIntegration integration = plugin.getArtisanIntegration();
+        File legacy = EditorProject.legacyToMove(plugin.getDataFolder(), integration.questsProject());
+        integration.useQuestsFolder(api.getProjectRoots().moduleFolder(EditorProject.PROJECT_ID, getId(), legacy));
+    }
+
+    /**
+     * The example quests, offered to every project in the editor and copied once into a new
+     * project {@code quests} on the first start. A failure leaves the quests running without it.
+     */
+    private void registerTemplate(ArtisanAPI api) {
+        boolean french = "fr".equals(EditorProject.defaultLang(plugin.getGlobalConfig().language()));
+        try {
+            api.getTemplates().register(TemplateDeclaration
+                    .fromResources(getClass().getClassLoader(), TEMPLATE_ROOT, TEMPLATE, TEMPLATE_VERSION, TEMPLATE_FILES)
+                    .title(french ? "Quêtes journalières" : "Daily quests")
+                    .seed(EditorProject.PROJECT_ID)
+                    .build());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            plugin.getLogger().log(Level.WARNING, "The example quests are not available", e);
+        }
+    }
+
+    /** Hands the editor view to Artisan, which serves it to the editor. */
+    private void registerEditorBundle(ArtisanAPI api) {
+        try {
+            api.getEditorBundles().register(
+                    EditorBundleDeclaration.fromResource(getClass().getClassLoader(), EDITOR_BUNDLE, EDITOR_SDK));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            plugin.getLogger().log(Level.WARNING, "The quest editor view is not available", e);
+        }
+    }
+
+    /** Declares the quests' Game events ({@link QuestGameEvents}) and starts firing them. */
+    private void registerGameEvents(ArtisanAPI api) {
+        if (!(plugin.getEventDispatcher() instanceof BukkitEventDispatcher dispatcher)) return;
+        try {
+            for (GameEventDeclaration declaration : QuestGameEvents.declarations()) {
+                api.getGameEvents().register(declaration);
+            }
+        } catch (IllegalStateException e) {
+            plugin.getLogger().warning("The quests' Game events are not available: " + e.getMessage());
+            return;
+        }
+        dispatcher.setObserver(new QuestGameEvents(
+                api.getGameEvents(),
+                api.getScheduler().forPlugin(plugin),
+                Bukkit::getPlayer,
+                Bukkit::isPrimaryThread,
+                plugin::runSync));
+    }
+
+    private void registerPlaceholders(ArtisanAPI api) {
+        QuestPlaceholders placeholders = plugin.getQuestPlaceholders();
+        try {
+            api.getPlaceholders().register(QuestPlaceholders.NAMESPACE,
+                    (player, key) -> placeholders.resolve(player != null ? player.getUniqueId() : null, key), true);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            plugin.getLogger().warning("The %" + QuestPlaceholders.NAMESPACE + "_*% placeholders are not available: "
+                    + e.getMessage());
+        }
     }
 
     @Override
     public void onDisable() {
+        if (plugin.getEventDispatcher() instanceof BukkitEventDispatcher dispatcher) {
+            dispatcher.setObserver(null);
+        }
+        if (api != null) {
+            api.getPlaceholders().unregister(QuestPlaceholders.NAMESPACE);
+        }
         this.api = null;
     }
 
     /**
-     * No-op: this fires when Artisan reloads its own bundle, which owns no MSQuests state.
-     * Quest configs reload through {@code /quest admin reload}, which calls
-     * {@link #signalDataReload()} instead.
+     * Fires when Artisan reloads its projects (a publish, {@code /artisan reload}). With
+     * {@code content_source: artisan} the quests are read from this module's
+     * {@code quest_group} Documents, and reload when those changed; otherwise nothing to do.
      */
     @Override
-    public void onReload() {}
+    public void onReload() {
+        plugin.onArtisanProjectsReloaded();
+    }
 
     /** Tells Artisan menus to re-fetch — call after a quest config reload. */
     public void signalDataReload() {
@@ -254,7 +380,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                     // Named but unresolved: online-only, and worth saying so rather
                     // than returning an empty list the caller has to interpret.
                     ? "player '" + string(params.get("player")) + "' is not online"
-                    : "artisanquests:active needs a player — pass the `player` parameter to preview it");
+                    : "msquests:active needs a player — pass the `player` parameter to preview it");
         }
 
         String groupFilter = string(params.get("group"));
@@ -293,10 +419,10 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             else plugin.getTrackingBossBarService().showBossBar(player);
         }
 
-        player.sendMessage(untrack
-                ? MessageBuilder.translatable(TranslationKey.QUEST_COMMAND_UNTRACKED).toComponent()
-                : MessageBuilder.translatable(TranslationKey.QUEST_COMMAND_TRACKED)
-                        .applyPlaceholderResolver(quest).toComponent());
+        (untrack
+                ? MessageBuilder.translatable(TranslationKey.QUEST_COMMAND_UNTRACKED)
+                : MessageBuilder.translatable(TranslationKey.QUEST_COMMAND_TRACKED).applyPlaceholderResolver(quest))
+                .send(player);
     }
 
     private void rotate(Player player, List<String> argv) {
@@ -308,12 +434,38 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         if (actor == null) return;
 
         QuestRotateResult result = plugin.getQuestLifecycleService().rotateQuest(actor, quest);
-        player.sendMessage(MessageBuilder.translatable(result).toComponent());
+        MessageBuilder.translatable(result).send(player);
     }
 
     /**
-     * Accepts either an instance id (the {@code id} of an {@code artisanquests:active} row) or a
-     * {@code group:key} config ref (the {@code id} of an {@code artisanquests:quests} row), and
+     * Hands over to every in-progress {@link ContributableObjective} of the quest whatever the
+     * player can give — items from the inventory, money from a bank — and reports each one.
+     */
+    private void contribute(Player player, List<String> argv) {
+        if (argv.isEmpty()) return;
+        Quest quest = findQuest(player, argv.get(0));
+        if (quest == null) return;
+
+        PlayerProfile profile = plugin.getPlayerProfileRegistry().getPlayerProfile(player.getUniqueId());
+        for (QuestObjective objective : quest.getActiveObjectives()) {
+            if (!(objective instanceof ContributableObjective contributable) || objective.isCompleted()) continue;
+
+            ContributableObjective.Contribution[] contribution = new ContributableObjective.Contribution[1];
+            boolean allowed = plugin.getQuestProgressService().contributeNow(objective, () -> {
+                contribution[0] = contributable.contribute(player);
+                return contribution[0].amount();
+            }, profile);
+            if (!allowed) continue; // refused by another plugin: nothing was taken, nothing to report
+
+            MessageBuilder message = MessageBuilder.translatable(contribution[0].messageKey());
+            contribution[0].placeholders().forEach(message::placeholder);
+            message.send(player);
+        }
+    }
+
+    /**
+     * Accepts either an instance id (the {@code id} of an {@code msquests:active} row) or a
+     * {@code group:key} config ref (the {@code id} of an {@code msquests:quests} row), and
      * looks it up across every actor the player belongs to — so a guild quest resolves the
      * same way a personal one does.
      */

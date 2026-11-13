@@ -1,11 +1,13 @@
 package com.github.ibanetchep.msquests.bukkit.service;
 
 import com.github.ibanetchep.msquests.bukkit.BukkitQuestsPlugin;
+import com.github.ibanetchep.msquests.bukkit.config.ContentSource;
 import com.github.ibanetchep.msquests.bukkit.config.GlobalConfig;
 import com.github.ibanetchep.msquests.bukkit.config.PlaceholdersConfig;
 import com.github.ibanetchep.msquests.bukkit.config.TrackingBossBarConfig;
 import dev.dejvokep.boostedyaml.YamlDocument;
-import net.kyori.adventure.bossbar.BossBar;
+import com.github.ibanetchep.msquests.bukkit.platform.BarOverlay;
+import org.bukkit.boss.BarColor;
 import dev.dejvokep.boostedyaml.dvs.versioning.BasicVersioning;
 import dev.dejvokep.boostedyaml.libs.org.snakeyaml.engine.v2.common.ScalarStyle;
 import dev.dejvokep.boostedyaml.libs.org.snakeyaml.engine.v2.nodes.Tag;
@@ -61,6 +63,7 @@ public class GlobalConfigLoaderService {
     public GlobalConfig load() {
         loadYamlDocument();
         String language = config.getString("language", "en_EN");
+        ContentSource contentSource = ContentSource.parse(config.getString("content_source", "legacy"));
 
         GlobalConfig.DatabaseConfig database = new GlobalConfig.DatabaseConfig(
                 config.getString("database.type", "mysql"),
@@ -73,8 +76,8 @@ public class GlobalConfigLoaderService {
 
         boolean bossBarEnabled = config.getBoolean("tracking.bossbar.enabled", false);
         String bossBarMessage = config.getString("tracking.bossbar.message", "%objective_name% - %objective_progress%");
-        BossBar.Color bossBarColor = BossBar.Color.valueOf(config.getString("tracking.bossbar.color", "WHITE").toUpperCase());
-        BossBar.Overlay bossBarStyle = BossBar.Overlay.valueOf(config.getString("tracking.bossbar.style", "PROGRESS").toUpperCase());
+        BarColor bossBarColor = BarColor.valueOf(config.getString("tracking.bossbar.color", "WHITE").toUpperCase());
+        BarOverlay bossBarStyle = BarOverlay.valueOf(config.getString("tracking.bossbar.style", "PROGRESS").toUpperCase());
         boolean bossBarShowProgress = config.getBoolean("tracking.bossbar.show_progress", true);
 
         TrackingBossBarConfig trackingBossBarConfig = new TrackingBossBarConfig(
@@ -84,6 +87,8 @@ public class GlobalConfigLoaderService {
         int cycleDurationSeconds = Math.max(1, config.getInt("placeholders.cycle_duration_seconds", 5));
         PlaceholdersConfig placeholdersConfig = new PlaceholdersConfig(cycleDurationSeconds);
 
-        return new GlobalConfig(language, database, trackingBossBarConfig, placeholdersConfig);
+        boolean deliverFromShulkerBoxes = config.getBoolean("deliver_item.include_shulker_boxes", true);
+
+        return new GlobalConfig(language, contentSource, database, trackingBossBarConfig, placeholdersConfig, deliverFromShulkerBoxes);
     }
 }

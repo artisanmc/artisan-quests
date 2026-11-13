@@ -1,217 +1,370 @@
 # Architecture - ArtisanQuests (ex-MSQuests)
 
-Ce document decrit l'architecture du projet ArtisanQuests, anciennement MSQuests, un plugin Minecraft Paper 1.21+ de gestion de quetes.
+This document describes the architecture of MSQuests, a Minecraft quest plugin for Paper, Folia and Spigot 1.21+ (Paper-only code is isolated in `bukkit/platform/`).
 
 ---
 
-## Vue d'ensemble
+## Overview
 
-MSQuests est un systeme de quetes modulaire construit sur une architecture en couches avec separation stricte entre la logique metier (core) et la plateforme (Bukkit). Le projet utilise Gradle multi-modules et cible Java 21.
+MSQuests is a modular quest system built on a layered architecture with a strict separation between business logic (core) and the platform (Bukkit). The project uses Gradle multi-module and targets Java 21.
 
 ```
                  +-----------+
-                 |  bukkit   |  Plugin Paper, commandes, listeners, handlers
+                 |  bukkit   |  Paper plugin, commands, listeners, handlers
                  +-----+-----+
                        |
               +--------+--------+
               |                 |
         +-----+-----+    +-----+-----+
-        |   core    |    | database  |  Persistance SQL async
+        |   core    |    | database  |  Async SQL persistence
         +-----------+    +-----------+
-        Domaine, services,    JDBI, HikariCP,
+        Domain, services,    JDBI, HikariCP,
         registries, events    migrations
 ```
 
-**Dependance entre modules :**
-- `bukkit` depend de `core` et `database`
-- `database` depend de `core` (via `api(project(":core"))`)
-- `core` n'a aucune dependance vers les autres modules
+**Module dependencies:**
+- `bukkit` depends on `core` and `database`
+- `database` depends on `core` (via `api(project(":core"))`)
+- `core` has no dependency on the other modules
 
 ---
 
-## Nom du plugin et compatibilite avec MSQuests
+## Plugin name and MSQuests compatibility
 
-Le plugin s'appelle `ArtisanQuests` (`name:` de `paper-plugin.yml`). Le code garde le package
-`com.github.ibanetchep.msquests` et les coordonnees Maven, invisibles pour l'utilisateur.
+The plugin is called `ArtisanQuests` (`name:` in `plugin.yml`). The code keeps the
+`com.github.ibanetchep.msquests` package and the Maven coordinates, which users never see.
 
-| Element | Nouveau | Ancien, toujours accepte |
+| Item | New | Old, still accepted |
 |---|---|---|
-| Nom du plugin | `ArtisanQuests` | `MSQuests` via `provides:` (les `depend: [MSQuests]` resolvent) |
-| Dossier de donnees | `plugins/ArtisanQuests/` | `plugins/MSQuests/` copie au premier demarrage (`LegacyDataFolderMigration`), l'original est garde pour le rollback |
-| Commande admin | `/artisanquests` | `/msquests` |
-| Placeholders PAPI | `%artisanquests_...%` | `%msquests_...%` (deux expansions enregistrees) |
-| Permissions | `artisanquests.player`, `.rotate`, `.admin` | `msquests.player`, `.rotate`, `.admin`, `msquests.*` : declarees dans `paper-plugin.yml` avec la nouvelle permission en enfant, donc un groupe LuckPerms qui les accorde garde ses droits |
-| Module et data sources Artisan | module `artisanquests`, `artisanquests:groups`, `:quests`, `:active`, commandes `artisanquests:track`, `:rotate` | aucun alias : un menu qui reference `msquests:*` doit etre mis a jour (rechercher-remplacer `msquests:` → `artisanquests:` dans ses fichiers) |
+| Plugin name | `ArtisanQuests` | `MSQuests` through `provides:` (`depend: [MSQuests]` still resolves) |
+| Data folder | `plugins/ArtisanQuests/` | `plugins/MSQuests/` copied on first start (`LegacyDataFolderMigration`); the original is kept for a rollback |
+| Admin command | `/artisanquests` | `/msquests` |
+| Permissions | `artisanquests.player`, `.rotate`, `.admin` | `msquests.player`, `.rotate`, `.admin`, `msquests.*`: declared in `plugin.yml` with the new node as a child, so a LuckPerms group that grants them keeps its rights |
 | Jar | `artisanquests-<version>.jar` | |
 
-Inchanges volontairement : type de bouton zMenu `MSQUESTS_QUEST_GROUP` (menus zMenu existants),
-tables `msquests_*` (un nom de table n'est pas visible).
+Unchanged on purpose: the Artisan module id and Presence `msquests`, its data sources
+`msquests:groups`, `:quests`, `:active` and commands `msquests:track`, `:rotate`, `:contribute`
+(menus and chains on servers reference them), the `%msquests_*%` PAPI alias, the zMenu button
+type `MSQUESTS_QUEST_GROUP` and the `msquests_*` tables (a table name is never visible).
 
-Les deux jars ne doivent pas coexister dans `plugins/` : `provides: [MSQuests]` entrerait en
-conflit avec l'ancien plugin.
+Both jars must not sit in `plugins/` together: `provides: [MSQuests]` would clash with the old
+plugin.
 
 ## Modules
 
-### `core/` - Logique metier
+### `core/` - Business logic
 
-Package racine : `com.github.ibanetchep.msquests.core`
+Root package: `com.github.ibanetchep.msquests.core`
 
-Contient toute la logique metier independante de la plateforme :
+Contains all the platform-independent business logic:
 
-| Package | Responsabilite |
+| Package | Responsibility |
 |---------|----------------|
-| `quest/actor/` | Entites principales : `Quest`, `QuestStage`, `QuestActor`, `ActorQuestGroup` |
-| `quest/player/` | `PlayerProfile` - profil joueur avec ses acteurs et quetes |
-| `quest/config/` | Configurations : `QuestConfig`, `QuestStageConfig`, `QuestObjectiveConfig`, `QuestGroupConfig`, `QuestTierConfig` |
-| `quest/config/annotation/` | `@ObjectiveType`, `@ActionType`, `@ConfigField`, `@AtLeastOneOfFields` |
-| `quest/config/group/` | `QuestGroupConfig` avec builder pattern |
-| `quest/objective/` | Interface `QuestObjective`, `AbstractQuestObjective<C>`, enums `QuestObjectiveStatus`, `Flow` |
-| `quest/condition/` | `QuestObjectiveCondition` - conditions sur les objectifs |
-| `quest/action/` | `QuestAction` - actions de recompense |
-| `quest/executor/` | `AtomicQuestExecutor` / `AtomicLocalQuestExecutor` - execution thread-safe par quete |
-| `quest/result/` | `QuestStartResult`, `QuestRotateResult` - enums de resultats |
-| `service/` | Services metier (orchestration) |
-| `factory/` | Factories avec registre de types |
-| `registry/` | Registres en memoire (ConcurrentHashMap) |
-| `event/` | `EventDispatcher`, `CoreEvent`, evenements du domaine |
-| `dto/` | DTOs pour serialisation/persistance |
-| `mapper/` | Mappers DTO <-> domaine |
+| `quest/actor/` | Main entities: `Quest`, `QuestStage`, `QuestActor`, `ActorQuestGroup` |
+| `quest/player/` | `PlayerProfile` - player profile with its actors and quests |
+| `quest/config/` | Configurations: `QuestConfig`, `QuestStageConfig`, `QuestObjectiveConfig`, `QuestGroupConfig`, `QuestTierConfig` |
+| `quest/config/annotation/` | `@ObjectiveType`, `@ConfigField`, `@AtLeastOneOfFields` |
+| `quest/config/action/` | `ActionChain` (opaque Artisan chain), `ChainRunner` port, `ChainContext` (bindings) |
+| `quest/config/condition/` | `Conditions` (opaque Artisan conditions), `ConditionChecker` port |
+| `quest/config/group/` | `QuestGroupConfig` with builder pattern |
+| `quest/objective/` | `QuestObjective` interface, `AbstractQuestObjective<C>`, enums `QuestObjectiveStatus`, `Flow` |
+| `quest/executor/` | `AtomicQuestExecutor` / `AtomicLocalQuestExecutor` - thread-safe execution per quest |
+| `quest/result/` | `QuestStartResult`, `QuestRotateResult` - result enums |
+| `service/` | Business services (orchestration) |
+| `factory/` | Factories with a type registry |
+| `registry/` | In-memory registries (ConcurrentHashMap) |
+| `event/` | `EventDispatcher`, `CoreEvent`, domain events |
+| `dto/` | DTOs for serialization/persistence |
+| `mapper/` | DTO <-> domain mappers |
 | `lang/` | `Translator`, `Translatable`, `PlaceholderProvider` |
-| `repository/` | Interfaces des repositories |
+| `repository/` | Repository interfaces |
 | `util/` | `CronUtils`, `JsonSchemaGenerator`, `JsonSchemaValidator` |
 
-### `database/` - Persistance
+### `database/` - Persistence
 
-Package racine : `com.github.ibanetchep.msquests.database`
+Root package: `com.github.ibanetchep.msquests.database`
 
-| Classe/Package | Responsabilite |
+| Class/Package | Responsibility |
 |----------------|----------------|
-| `DbAccess` | Pool de connexions HikariCP, instance JDBI, executor single-thread |
-| `DbCredentials` | Record de configuration (H2 ou MySQL) |
-| `MigrationManager` | Systeme de migrations sequentielles avec table `schema_version` |
-| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2) |
-| `repository/` | `SqlRepository` (base async), implementations SQL pour Quest, PlayerProfile, Actor, Rotation |
-| `RecordRowMapper` | Mapper JDBI generique pour Java records |
+| `DbAccess` | HikariCP connection pool, JDBI instance, single-thread executor |
+| `DbCredentials` | Configuration record (H2 or MySQL) |
+| `MigrationManager` | Sequential migration system with a `schema_version` table |
+| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables) |
+| `SqlTables` | Table names of a layout: `LEGACY` (`msquests_*`) or `ARTISAN` (`artisan_quests_*`) |
+| `LegacyDataCopier` | One-time transactional copy from `msquests_*` to `artisan_quests_*` (see *Content source*) |
+| `repository/` | `SqlRepository` (async base), SQL implementations for Quest, PlayerProfile, Actor, Rotation; `ArtisanQuestSqlRepository` for `artisan_quests_quest/objective` |
+| `RecordRowMapper` | Generic JDBI mapper for Java records |
 
-**Schema principal :**
+**Main schema:**
 ```
 msquests_player_profile (id, name, tracked_quest_id, created_at, updated_at)
 msquests_actor          (id, actor_type, created_at, updated_at)
 msquests_quest          (id, quest_key, group_key, status, actor_id FK, timestamps)
-msquests_objective      (objective_key, quest_id FK, status, type, progress) -- PK composite
+msquests_objective      (objective_key, quest_id FK, status, type, progress) -- composite PK
 msquests_rotation       (actor_id, group_key, rotated_at)
+
+-- v3, used with content_source: artisan (the msquests_* tables stay untouched)
+artisan_quests_profile   (like msquests_player_profile)
+artisan_quests_actor     (like msquests_actor)
+artisan_quests_quest     (id, quest_uid, quest_key, group_key, status, actor_id FK, timestamps)
+artisan_quests_objective (quest_id FK, stage_key, objective_key, status, type, progress) -- composite PK
+artisan_quests_rotation  (actor_id, group_uid, rotated_at)
+artisan_quests_data_copy (one row once the copy is done)
 ```
 
-### `bukkit/` - Integration Paper
+`quest_key` / `group_key` of `artisan_quests_quest` are only the last recorded
+names (logs, support): a row is resolved by `quest_uid`.
 
-Package racine : `com.github.ibanetchep.msquests.bukkit`
+### `bukkit/` - Paper integration
 
-| Package | Responsabilite |
+Root package: `com.github.ibanetchep.msquests.bukkit`
+
+| Package | Responsibility |
 |---------|----------------|
-| `BukkitQuestsPlugin` | Point d'entree, implemente `MSQuestsPlatform`, cablage de tous les composants |
-| `command/` | Commandes Lamp : `QuestCommand`, `QuestAdminCommand`, parameter types custom |
-| `listener/` | `ServerLoadListener` (chargement configs), `PlayerJoinListener` (chargement joueur) |
-| `event/` | `BukkitEventDispatcher` + evenements Bukkit miroirs des core events |
-| `quest/objective/` | 10 handlers d'objectifs (un sous-package par type) |
-| `quest/action/` | 7 actions Bukkit (commandes, messages, titres, items, bossbar) |
+| `BukkitQuestsPlugin` | Entry point, implements `MSQuestsPlatform`, wires all the components |
+| `command/` | Lamp commands: `QuestCommand`, `QuestAdminCommand`, custom parameter types |
+| `listener/` | `ServerLoadListener` (config loading), `PlayerJoinListener` (player loading) |
+| `event/` | `BukkitEventDispatcher` + Bukkit events mirroring the core events |
+| `quest/objective/` | 10 objective handlers (one sub-package per type) |
 | `quest/actor/` | `BukkitQuestPlayerActor`, `BukkitQuestGlobalActor` |
-| `quest/condition/` | `WorldCondition`, `BiomeCondition` |
 | `config/` | `GlobalConfig`, `GlobalConfigLoaderService` |
-| `repository/` | `QuestConfigYamlRepository` (Jackson YAML) |
-| `service/` | `QuestPlayerService` (chargement joueurs) |
-| `lang/` | `BukkitTranslator` |
+| `repository/` | `QuestConfigYamlRepository` (Jackson YAML, `quests/*.yml`) |
+| `document/` | `quest_group` Documents: `QuestGroupDocumentReader`/`Writer`, `QuestGroupDocumentRepository`, `LegacyContentConverter`, `MigrationMapFile` |
+| `migration/` | `ContentMigration` (`/msquests migrate`) |
+| `service/` | `QuestPlayerService` (player loading) |
+| `lang/` | `BukkitTranslator` (file kept up to date by BoostedYAML, keys served by Artisan's translations, `msquests` bundle) |
 | `text/` | `PlaceholderEngine`, `MessageBuilder` |
-| `placeholderapi/` | `QuestsPlaceholderExpansion` |
-| `zmenu/` | Integration zMenu (pagination de groupes de quetes) |
-| `artisan/` | Integration Artisan (data sources + commandes de menu) |
+| `placeholder/` | `QuestPlaceholders` (Artisan namespace `quests`) |
+| `placeholderapi/` | `QuestsPlaceholderExpansion` (PAPI alias `msquests`) |
+| `zmenu/` | zMenu integration (quest group pagination) |
+| `artisan/` | Artisan integration (`editor/` project, `quest_group` kind, `quests:*` actions, `ArtisanChainRunner`, `ArtisanConditionChecker`, data sources, menu commands) |
 
 ---
 
-## Integration Artisan
+## Artisan integration
 
-Optionnelle (softdepend). Quand le plugin Artisan est present, `ArtisanIntegration`
-enregistre `MsQuestsArtisanModule` via le `ServicesManager`, ce qui expose les quetes
-aux menus de l'editeur web Artisan. Sans Artisan, rien ne change.
+**Required** (`depend: [Artisan]` in `plugin.yml`, Artisan API 1.0.0+). At the very
+start of `onEnable`, `ArtisanIntegration.resolve` loads `ArtisanAPI` from the
+`ServicesManager`; if it is missing or too old, the plugin disables itself with a
+SEVERE message, before opening the database. Once the services are wired, `MsQuestsArtisanModule`
+is registered and declares:
 
-| Data source | Stability | Contenu |
+- **an example template** `daily` (`api.getTemplates()`, files in
+  `bukkit/src/main/resources/artisan-templates/daily/`): an `example_daily` group of three
+  daily quests, which the editor offers to copy into any project (**+ → From
+  a module…**). On first start, Artisan copies it once into the `quests` module folder
+  (`plugins/Artisan/modules/quests/`, `EditorProject`); if deleted, it does not come back.
+  Bump `TEMPLATE_VERSION` on every change to these files: the editor then offers the
+  update to unmodified copies;
+- **the module folder** `quests` (`api.getProjectRoots().moduleFolder`):
+  the editor files it under the installed Quests module, not among the admin's modules. It
+  has the name of the former ordinary project `quests`, which therefore becomes the module
+  folder as is, without a move. The module's former project, `plugins/MSQuests/editor/`, is moved there
+  once if it contains groups and the folder does not exist yet. A folder already there
+  changes key (`addon:quests` instead of its `.artisan/project-id`): its earlier Versions and
+  Drafts are no longer attached to it;
+- **the `quest_group` Document kind** (`quest_groups/` folder, `quest_group/v1` schema):
+  one Document per group, named after the group key, in **any Artisan
+  project** (`ArtisanProjectFiles` on `api.getProject()`), not only the module's. A group's
+  action chains run in the project that holds its Document, so that its menu
+  references resolve there. Quests are loaded from there with
+  `content_source: artisan` (see *Content source*); otherwise from `quests/*.yml`.
+  `onReload` (publish, `/artisan reload`) reloads the quests when these Documents have
+  changed (SHA-256 fingerprint), and does nothing otherwise;
+- **its editor view** `artisan-editor/ui.js`: the repository's `editor/` folder (TypeScript + React, against `@artisan/editor-sdk`, taken
+  from `editor/vendor/` until the SDK is published) builds it into
+  `bukkit/src/main/resources/artisan-editor/` (`cd editor && npm ci && npm run build`, output
+  committed: the Gradle build does not need Node). Artisan serves it to the editor, which
+  loads it for the `quest_group` kind: group view, then quest view (stages, objectives,
+  `run_command` rewards, texts in the Translations panel). `EDITOR_SDK` must equal the
+  SDK version the build prints;
+- **the `quests:*` actions** (`QuestActions`), usable in any Artisan chain:
+
+| Action | Arguments | Effect |
 |---|---|---|
-| `artisanquests:groups` | STATIC (`key`) | Groupes de quetes + compteurs de l'acteur, `quests[]` imbriquees |
-| `artisanquests:quests` | STATIC (`id` = `group:key`) | Catalogue complet : config + `rewards[]` + `stages[] > objectives[]`, avec la progression de l'acteur superposee |
-| `artisanquests:active` | DYNAMIC | Instances en cours de l'acteur, objectif par objectif |
+| `quests:start` | `group`, `quest` | Starts the quest for the player's actor, with the group's rules (limits, requirements) |
+| `quests:abandon` | `group`, `quest` | Abandons the active instance: it becomes `FAILED` and still counts in the period; if tracked, it no longer is |
+| `quests:track` | `group`, `quest` | Tracks / untracks the active instance (like `msquests:track`) |
+| `quests:rotate` | `group`, `quest` | Swaps the active instance for another one of the group |
+| `quests:complete` | `group`, `quest` | Completes the active instance, rewards included |
+| `quests:distribute` | `group` (primary), `amount?` | Distributes `amount` quests, otherwise applies the group's distribution |
+| `quests:action_bar` | `text` (primary, ltext) | Shows the text in the action bar (Artisan's core has none) |
+| `quests:boss_bar` | `text` (primary), `color`, `style`, `show_progress`, `duration` | Per-player boss bar, updated in place, hidden `duration` s after the last call; filled with the chain's `progress_ratio` |
 
-Trois parametres, communs aux trois sources :
+`group` is a `document_ref` to `quest_group`: the editor offers a picker, draws
+the edge and follows a rename. Its value is the group key (a qualified reference
+`project:daily` is reduced to `daily`), so it also works for a group still read from
+`quests/*.yml`, but the picker stays empty as long as no `quest_group` Document exists.
+`quest` is the quest key in the group. Both go through `ActionRuntime.text`,
+so the `{key}` of an iterated line is interpolated. The targeted actor is the one of the actor type
+of the group that the player belongs to; unknown data logs a warning and the chain
+continues.
 
-- `player` — cibler un autre joueur que celui qui ouvre le menu (par nom, doit etre en ligne)
-- `actor` — quel acteur lire : `player` (defaut), `global`, ou tout autre type enregistre
-- `group` — restreindre a un groupe (`artisanquests:quests`, `artisanquests:active`)
+### Game events: Triggers react to quests
 
-`ActorResolver` (dans `core/registry/`) resout (joueur, type d'acteur) via
-`QuestActor#isMember`, jamais par identite : un futur acteur guilde fonctionne sans
-toucher a l'integration. Il vit dans `core` parce qu'il ne doit rien a Artisan —
-commandes, placeholders et menus posent la meme question.
+The module declares six Game events (`QuestGameEvents`),
+so a Trigger (`triggers/<id>.yml`, `on: quests:completed`), a conversation or another module
+reacts to a quest without a hook in its group.
 
-De meme, `ActorQuestGroup#getCurrentAttempt(questKey)` repond a « la tentative courante
-de l'acteur sur cette quete » (instance active, sinon la plus recente non-expiree de la
-periode). C'est la question que toutes les surfaces d'affichage posent ; elle est
-resolue une fois, dans le domaine.
+| Game event | Context (`{event.…}`) | Fired when |
+|---|---|---|
+| `quests:started` | `group`, `quest`, `actor_type` | an instance starts |
+| `quests:objective_completed` | + `stage`, `objective`, `objective_type` | an objective reaches its target |
+| `quests:stage_completed` | + `stage` | every objective of a stage is done (before `completed` for the last one) |
+| `quests:completed` | `group`, `quest`, `actor_type` | the quest completes (forced completion included) |
+| `quests:expired` | same | its duration or its period ran out |
+| `quests:abandoned` | same | `quests:abandon` (status `FAILED`) |
 
-**Catalogue = config + progression superposee.** `artisanquests:quests` est keyee sur les
-**configs**, pas sur les instances : toutes les quetes d'un groupe apparaissent, demarrees
-ou non, et l'etat du joueur est pose par-dessus. Une quete jamais commencee expose donc
-quand meme ses stages, ses objectifs (avec leur cible) et ses recompenses, a progression
-zero. C'est ce qui permet un menu « rankup » qui montre l'arbre complet et l'avancement.
+`group`, `quest`, `stage` and `objective` are the keys an author writes, never the uids.
+A quest belongs to an actor: the event fires once for each online member, on the thread
+that owns that player (the lifecycle hops to the server thread to read the members first).
+Nothing is read or scheduled while no listener observes the event. A cancelled core event
+fires nothing. `BukkitEventDispatcher.setObserver` is the hook; the module clears it on disable.
 
-Cela suppose que la cible d'un objectif soit lisible sans instance : `QuestObjectiveConfig`
-declare `getTarget()`, et `AbstractQuestObjective` la lit de la, au lieu de la recevoir en
-argument de constructeur. Catalogue et instance live ne peuvent donc pas diverger.
+### Rewards, hooks and requirements: Artisan chains
 
-Deux commandes appelables depuis un bouton de menu : `artisanquests:track <id>` (toggle) et
-`artisanquests:rotate <id>`, ou `<id>` est soit l'UUID d'une instance, soit un `group:key`.
+A quest's hooks (`actions.start`, `objective_progress`, `objective_complete`, `complete`,
+each run after the group's hook for the same event) and the 7 group hooks (`actions` key; former names `on` and `rewards`, still read) (`actions.quest_start`, `quest_complete`,
+`objective_progress`, `objective_complete`, `quest_distribution`, `actor_load`,
+`all_period_quests_complete`) are Artisan chains (structured wire: `{action: args}`,
+`if/do/else`). The core carries them as an opaque `ActionChain` and runs them through the
+`ChainRunner` port; `ArtisanChainRunner` passes them to `ModuleActionsApi.run` in the
+`quests` project, **once per online member of the actor** (a global or guild group therefore runs
+one console command per member), after a hop to the main thread if needed.
 
-**Brut plutot que pre-formate.** La mise en forme appartient au menu. Les lignes
-portent des nombres (`objective_progress` / `objective_target`), des listes
-(`rewards[]`) et des instants absolus en epoch millis (`period_end`,
-`expires_at`) — jamais de chaine deja composee. Cote Artisan, le Template
-recompose ce qu'il veut :
+Bindings (`ChainContext#args`): `actor`, `actor_name`, `group`, `group_title`, `quest`,
+`quest_title`, `objective`, `objective_title`, `progress`, `amount`, `progress_ratio`,
+`objectives` (each objective rendered with the group's `objective_line`, default
+`<newline> - {objective_name}`), `tracked` (per player), plus all the former
+MSQuests placeholders (`quest_name`, `objective_progress`, `quest_tier_name`...).
+
+There is no longer a list of rewards to display: what the player wins is written in the
+quest description or in the menu item. The legacy conversion appends the `name` of the
+former actions to the end of the description, and `%quest_rewards%` (zMenu) is empty. A quest's `requirements` and an
+objective's `conditions` are Artisan conditions (`Conditions`), tested through `ConditionChecker` /
+`ArtisanConditionChecker` (`ConditionsApi.test`); an offline player or a call off
+its thread is false. They are validated (`ConditionsApi.validate`) on every
+load, and errors are logged.
+
+The in-house actions and conditions (`command`, `message`, `title`, `boss_bar`,
+`permission`, `placeholder`...) no longer exist. `LegacyActions` converts them on the fly
+(`quests/*.yml` on every load, migration to Documents, legacy steps left
+in a Document): `command` → `run_command` (console), `message` → `send_message`
+(`objective_template` → `objective_line`), `title` → `show_title`, `give_item` →
+`give_item`, `action_bar`/`boss_bar` → `quests:*`, `%quest_name%` → `{quest_name}`,
+`%msquests_x%` → `%quests_x%`, conditions → `has_permission`, `placeholder_equals`,
+`placeholder_match` or `expression` (the only one that reads bindings). Differences noted in the
+migration report: `give_item` no longer drops on the ground what does not fit, unknown condition
+dropped.
+
+Placeholders: `QuestPlaceholders` is registered in Artisan's `PlaceholderRegistry`
+(namespace `quests`, exposed to PAPI); `%msquests_*%` stays as a PAPI alias (C7). New
+keys `status_<group>:<quest>` and `completed_<group>:<quest>`.
+
+The data sources and commands below remain (`msquests:*` alias, C7):
+
+| Data source | Stability | Content |
+|---|---|---|
+| `msquests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
+| `msquests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
+| `msquests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
+
+Three parameters, common to the three sources:
+
+- `player` — target a player other than the one opening the menu (by name, must be online)
+- `actor` — which actor to read: `player` (default), `global`, or any other registered type
+- `group` — restrict to one group (`msquests:quests`, `msquests:active`)
+
+`ActorResolver` (in `core/registry/`) resolves (player, actor type) via
+`QuestActor#isMember`, never by identity: a future guild actor works without
+touching the integration. It lives in `core` because it owes nothing to Artisan —
+commands, placeholders and menus ask the same question.
+
+Likewise, `ActorQuestGroup#getCurrentAttempt(questKey)` answers "the actor's current
+attempt at this quest" (active instance, otherwise the most recent non-expired one of the
+period). It is the question every display surface asks; it is
+resolved once, in the domain.
+
+**Catalog = config + progress laid over it.** `msquests:quests` is keyed on the
+**configs**, not on the instances: all the quests of a group appear, started
+or not, and the player's state is laid over them. A quest never started therefore still
+exposes its stages, its objectives (with their target) and its rewards, at zero
+progress. This is what allows a "rankup" menu that shows the full tree and the progress.
+
+This assumes an objective's target is readable without an instance: `QuestObjectiveConfig`
+declares `getTarget()`, and `AbstractQuestObjective` reads it from there, instead of receiving it as a
+constructor argument. Catalog and live instance therefore cannot diverge.
+
+**Editor preview from the draft.** The editor view computes the three sources from the quest
+groups being edited (`editor/src/sourceRows.ts`, `FrontendModule.localPreviewRows`), so a quest
+menu previews the draft before any deploy. The definition fields (titles, limits, stages,
+objectives and their targets) come from the draft; the player's fields (status, progress,
+counters, `period_end`) from the server's rows, matched by key (`ctx.serverRows`, Artisan editor
+SDK 1.12). A quest the draft adds shows the neutral state, one it removes disappears; an
+instance of `msquests:active` whose quest is gone from the draft is dropped. Of an attempt, only
+what the server stores is taken (each objective's progress and COMPLETED/FAILED status, by
+objective key): completion, ratios, the current stage and objective are derived again over the
+draft with the domain's rules, so a lowered target or a removed stage previews as the server will
+show it after the deploy. An objective keeps
+the server's name while its type and target are unchanged, otherwise it is named from the
+default `objective.<type>` texts (an admin's own wording in `lang/` shows after a deploy). The
+`group` parameter narrows the rows like the fetcher (`ctx.params`). An older editor passes no
+context: groups and quests show the draft at neutral state, `msquests:active` the server.
+`testdata/sources/*.json` pins the definition fields both sides must produce, and stored
+attempts laid over the document:
+`QuestSourceVectorsTest` (plugin) and `sourceRows.test.ts` (editor) read the same files.
+The bundle still declares SDK 1.10, so it loads on an older Artisan.
+
+Three commands callable from a menu button: `msquests:track <id>` (toggle),
+`msquests:rotate <id>` and `msquests:contribute <id>`, where `<id>` is either an instance's UUID
+or a `group:key`. `contribute` gives each ongoing objective that implements
+`ContributableObjective` what the player can provide (inventory items for `deliver_item`,
+money for a bank objective provided by a third-party plugin), never more than what is missing. The
+progress is written right away (`progressObjectiveNow`), not batched: what the player
+gave has already left their inventory.
+
+**Raw rather than pre-formatted.** Formatting belongs to the menu. Rows
+carry numbers (`objective_progress` / `objective_target`), lists
+(`stages[]`) and absolute instants in epoch millis (`period_end`,
+`expires_at`) — never an already composed string. On the Artisan side, the Template
+recomposes what it wants:
 
 ```
 {objective_progress}/{objective_target}
-{rewards.pluck("name").join("
-")}
 {period_end.until()}
 ```
 
-`rewards_lore`, `countdown`, `period_end` formate et `expires_in` ont ete retires
-le 2026-08-05 : ils n'existaient que parce que le runtime Artisan ne savait pas
-joindre une liste ni formater une duree (ADR `expression-parity`).
+`rewards_lore`, `countdown`, formatted `period_end` and `expires_in` were removed
+on 2026-08-05: they only existed because the Artisan runtime could not
+join a list or format a duration (ADR `expression-parity`).
 
-**Contrainte** : les fetchers tournent sur le main thread au rendu du menu. Ils lisent
-uniquement les registres memoire — jamais de repository, jamais d'I/O. Un acteur non
-charge (joueur hors ligne) donne des valeurs neutres, pas une attente.
+**Constraint**: fetchers run on the main thread when the menu renders. They only read
+the in-memory registries — never a repository, never I/O. An unloaded
+actor (offline player) gives neutral values, not a wait.
 
-Build : `artisan-core-api` est `compileOnly` (fourni par le plugin Artisan, jamais shade).
-Le produire avec `cd <Artisan>/plugin && ./gradlew publishToMavenLocal`.
+Build: `artisan-core-api` is `compileOnly` (provided by the Artisan plugin, never shaded),
+version `artisanApiVersion` in `gradle.properties`, from repo.artisanmc.net/releases.
 
 ---
 
-## Modele de domaine
+## Domain model
 
-### Hierarchie des entites
+### Entity hierarchy
 
 ```
-QuestGroupConfig (template de groupe)
-  |-- QuestConfig (template de quete)
+QuestGroupConfig (group template)
+  |-- QuestConfig (quest template)
         |-- QuestStageConfig
               |-- QuestObjectiveConfig
 
-QuestActor (joueur ou global)
-  |-- ActorQuestGroup (suivi par groupe)
-  |-- Quest (instance runtime)
+QuestActor (player or global)
+  |-- ActorQuestGroup (per-group tracking)
+  |-- Quest (runtime instance)
         |-- QuestStage
-              |-- QuestObjective (progression trackee)
+              |-- QuestObjective (tracked progress)
 ```
 
-### Cycle de vie d'une quete
+### Quest lifecycle
 
 ```
 QuestConfig         Quest              QuestStage           QuestObjective
@@ -222,53 +375,53 @@ QuestConfig         Quest              QuestStage           QuestObjective
                     (EXPIRED)    <--- duration/cron expiry
 ```
 
-1. **Distribution** : `QuestDistributionService` selectionne les quetes candidates (strategie SEQUENTIAL ou RANDOM avec tiers)
-2. **Demarrage** : `QuestLifecycleService.startQuest()` valide les preconditions (`QuestStartResult`) et cree l'instance
-3. **Progression** : Les handlers Bukkit detectent les evenements de jeu -> `QuestProgressService.progressObjective()` avec batching
-4. **Completion objectif** : Quand `progress >= target`, l'objectif est complete, les actions d'objectif s'executent
-5. **Completion stage** : Quand tous les objectifs du stage sont completes, le stage suivant s'active
-6. **Completion quete** : Quand le dernier stage est complete, les actions de recompense s'executent
-7. **Expiration** : `QuestLifecycleService.expireQuests()` verifie `shouldExpire()` (duree ou cron)
-8. **Rotation** : `rotateQuest()` remplace une quete active par une autre candidate du meme groupe
+1. **Distribution**: `QuestDistributionService` selects the candidate quests (SEQUENTIAL or RANDOM strategy with tiers)
+2. **Start**: `QuestLifecycleService.startQuest()` validates the preconditions (`QuestStartResult`) and creates the instance
+3. **Progress**: Bukkit handlers detect game events -> `QuestProgressService.progressObjective()` with batching
+4. **Objective completion**: When `progress >= target`, the objective is completed, the objective actions run
+5. **Stage completion**: When all the stage's objectives are completed, the next stage activates
+6. **Quest completion**: When the last stage is completed, the reward actions run
+7. **Expiration**: `QuestLifecycleService.expireQuests()` checks `shouldExpire()` (duration or cron)
+8. **Rotation**: `rotateQuest()` replaces an active quest with another candidate of the same group
 
-### Types d'acteurs
+### Actor types
 
-- **`QuestPlayerActor`** : Quetes individuelles par joueur
-- **`QuestGlobalActor`** : Quetes partagees server-wide (tous les joueurs contribuent)
+- **`QuestPlayerActor`**: Individual quests per player
+- **`QuestGlobalActor`**: Quests shared server-wide (all players contribute)
 
-Les acteurs possedent des `ActorQuestGroup` qui trackent les quetes par groupe et les rotations par periode.
+Actors own `ActorQuestGroup`s that track the quests per group and the rotations per period.
 
 ---
 
-## Couche Services
+## Services layer
 
-Les services orchestrent toute la logique metier. Ils operent sur les registres en memoire et delegent la persistance aux repositories async.
+Services orchestrate all the business logic. They operate on the in-memory registries and delegate persistence to the async repositories.
 
-| Service | Responsabilite |
+| Service | Responsibility |
 |---------|----------------|
-| `QuestLifecycleService` | Start, complete, expire, rotate, distribute, refresh des quetes |
-| `QuestProgressService` | Progression des objectifs avec batching (`PendingObjectiveProgress`) et flush |
-| `QuestDistributionService` | Selection de candidates, validation des preconditions (`canStartQuest`) |
-| `QuestConfigService` | Chargement/reload des configs depuis le repository |
-| `QuestService` | CRUD quetes via repository, gestion du registre |
-| `QuestActorService` | Chargement des acteurs, liaison avec profils |
-| `PlayerProfileService` | CRUD profils joueurs, liaison avec acteurs |
-| `QuestPlayerService` (bukkit) | Chargement complet d'un joueur (acteur + profil + quetes) |
+| `QuestLifecycleService` | Start, complete, expire, rotate, distribute, refresh quests |
+| `QuestProgressService` | Objective progress with batching (`PendingObjectiveProgress`) and flush |
+| `QuestDistributionService` | Candidate selection, precondition validation (`canStartQuest`) |
+| `QuestConfigService` | Config loading/reloading from the repository |
+| `QuestService` | Quest CRUD via repository, registry management |
+| `QuestActorService` | Actor loading, linking with profiles |
+| `PlayerProfileService` | Player profile CRUD, linking with actors |
+| `QuestPlayerService` (bukkit) | Full loading of a player (actor + profile + quests) |
 
 ---
 
-## Systeme d'evenements
+## Event system
 
-Architecture event-driven a deux niveaux :
+Two-level event-driven architecture:
 
 ```
-Handler Bukkit (BlockBreakEvent, etc.)
+Bukkit handler (BlockBreakEvent, etc.)
     |
     v
 Core Service (QuestProgressService)
     |
     v  dispatch()
-EventDispatcher (interface core)
+EventDispatcher (core interface)
     |
     v  (implementation)
 BukkitEventDispatcher
@@ -277,50 +430,51 @@ BukkitEventDispatcher
 Bukkit PluginManager (ObjectiveProgressEvent, QuestCompleteEvent, etc.)
 ```
 
-**Evenements core (cancellables) :**
+**Core events (cancellable):**
 - `CoreQuestStartEvent` / `CoreQuestStartedEvent`
 - `CoreQuestCompletedEvent`
 - `CoreQuestObjectiveProgressEvent` / `CoreQuestObjectiveProgressedEvent`
 - `CoreQuestObjectiveCompletedEvent`
 
-Chaque evenement core a son miroir Bukkit dans `bukkit/event/`.
+**Core events (notifications only, no Bukkit mirror):** `CoreQuestStageCompletedEvent`,
+`CoreQuestExpiredEvent`, `CoreQuestAbandonedEvent`; they feed the Game events above.
+
+The other core events have their Bukkit mirror in `bukkit/event/`.
 
 ---
 
-## Registres
+## Registries
 
-Stockage en memoire avec `ConcurrentHashMap` pour la thread safety :
+In-memory storage with `ConcurrentHashMap` for thread safety:
 
-| Registre | Cle | Valeur | Role |
-|----------|-----|--------|------|
-| `QuestConfigRegistry` | `String` (group key) | `QuestGroupConfig` | Configs des groupes charges depuis YAML |
-| `QuestRegistry` | `UUID` | `Quest` | Toutes les quetes actives en memoire |
-| `QuestActorRegistry` | `UUID` | `QuestActor` | Acteurs charges (joueurs connectes + globaux) |
-| `PlayerProfileRegistry` | `UUID` | `PlayerProfile` | Profils joueurs connectes |
-| `ActorTypeRegistry` | `String` (type name) | `Class<? extends QuestActor>` | Types d'acteurs enregistres |
+| Registry | Key | Value | Role |
+|----------|-----|-------|------|
+| `QuestConfigRegistry` | `String` (group key) | `QuestGroupConfig` | Group configs loaded from YAML |
+| `QuestRegistry` | `UUID` | `Quest` | All the active quests in memory |
+| `QuestActorRegistry` | `UUID` | `QuestActor` | Loaded actors (connected players + global) |
+| `PlayerProfileRegistry` | `UUID` | `PlayerProfile` | Connected player profiles |
+| `ActorTypeRegistry` | `String` (type name) | `Class<? extends QuestActor>` | Registered actor types |
 
 ---
 
 ## Factories
 
-Pattern registre + factory pour le polymorphisme :
+Registry + factory pattern for polymorphism:
 
-| Factory | Annotation | Enregistrement | Creation |
+| Factory | Annotation | Registration | Creation |
 |---------|------------|----------------|----------|
-| `QuestFactory` | - | - | `Quest` depuis config, DTO, ou parametres |
-| `QuestObjectiveFactory` | `@ObjectiveType` | `register(configClass, objectiveClass, handler)` | `QuestObjectiveConfig` et `QuestObjective` depuis DTO |
-| `QuestActionFactory` | `@ActionType` | `register(actionClass, factory)` | `QuestAction` depuis DTO |
-| `QuestObjectiveConditionFactory` | - | `register(type, factory)` | `QuestObjectiveCondition` depuis DTO |
+| `QuestFactory` | - | - | `Quest` from config, DTO, or parameters |
+| `QuestObjectiveFactory` | `@ObjectiveType` | `register(configClass, objectiveClass, handler)` | `QuestObjectiveConfig` and `QuestObjective` from DTO |
 
-Les factories utilisent la validation JSON Schema (generee depuis `@ConfigField`) pour valider les configurations.
+The factories use JSON Schema validation (generated from `@ConfigField`) to validate configurations.
 
 ---
 
-## Persistance
+## Persistence
 
-### Pattern async
+### Async pattern
 
-Tous les repositories retournent `CompletableFuture`. L'execution se fait sur un `ExecutorService` single-thread (via `DbAccess.getSingleThreadExecutor()`).
+All repositories return `CompletableFuture`. Execution happens on a single-thread `ExecutorService` (via `DbAccess.getSingleThreadExecutor()`).
 
 ```java
 // SqlRepository base
@@ -329,177 +483,225 @@ protected <T> CompletableFuture<T> supplyAsync(Callable<T> callable) {
 }
 ```
 
-### Progression batchee
+### Batched progress
 
-`QuestProgressService` accumule les progressions dans une map `PendingObjectiveProgress` et les flush periodiquement ou quand un objectif atteint sa target. Cela evite des ecritures DB a chaque micro-evenement.
+`QuestProgressService` accumulates progress in a `PendingObjectiveProgress` map and flushes it periodically or when an objective reaches its target. This avoids a DB write on every micro-event.
 
-### Execution atomique
+### Atomic execution
 
-`AtomicLocalQuestExecutor` utilise un `ReentrantLock` par quete (identifiee par UUID) pour garantir qu'une seule operation modifie une quete a la fois. L'execution se fait sur des virtual threads.
+`AtomicLocalQuestExecutor` uses a `ReentrantLock` per quest (identified by UUID) to guarantee that only one operation modifies a quest at a time. Execution happens on virtual threads.
 
 ---
 
-## Types d'objectifs
+## Objective types
 
-Chaque type d'objectif suit un pattern en 3 classes + registration :
+Each objective type follows a 3-class pattern + registration:
 
-| Type | Evenement Bukkit | Config specifique |
+| Type | Bukkit event | Specific config |
 |------|-----------------|-------------------|
 | `block_break` | `BlockBreakEvent` | material |
 | `kill_entity` | `EntityDeathEvent` | entity type |
-| `fishing` | `PlayerFishEvent` | - |
+| `fishing` | `PlayerFishEvent` | item (`item` + `match`, legacy `fish_type`) |
 | `execute_command` | `PlayerCommandPreprocessEvent` | command pattern |
-| `craft_item` | `CraftItemEvent` | material |
+| `craft_item` | `CraftItemEvent` | item (`item` + `match`, legacy `material`) |
 | `breed_animal` | `EntityBreedEvent` | entity type |
-| `deliver_item` | Integration custom | target NPC |
+| `deliver_item` | `msquests:contribute` (menu) | item (`item` + `match`, legacy `material`), amount — inventory then carried shulkers (`deliver_item.include_shulker_boxes` in config.yml) |
 | `harvest_crop` | `BlockBreakEvent` | crop type |
+
+An objective's **item** (`ItemTarget`) is an Artisan item spec: the fields of a menu button's appearance (`material`: vanilla, `item:<captured id>` or `nexo:<id>`…; `title`, `lore`, `enchants`, `custom_model_data`), built and compared by `api.getItems()`. `match` lists the criteria (`material`, `custom_item`, `name`, `lore`, `enchants`, `custom_model_data`, `damage`, `exact`); absent, those the item carries. A legacy bare material is compared on the material alone, and is rewritten as `item` + `match: [material]` on save. No item: any item.
 | `placeholder` | Polling scheduler | placeholder, interval, condition |
 | `travel` | `PlayerMoveEvent` | distance |
 
 ---
 
-## Types d'actions
+## Action types
 
-| Type | Effet |
-|------|-------|
-| `command` | Execute une commande serveur |
-| `player_command` | Execute une commande en tant que joueur |
-| `player_message` | Envoie un message chat |
-| `player_actionbar` | Affiche un message action bar |
-| `player_title` | Affiche un titre/sous-titre |
-| `player_bossbar` | Affiche une boss bar |
-| `give_item` | Donne un item |
+No more action types of our own: rewards and hooks are Artisan chains (see
+*Rewards, hooks and requirements*). The vocabulary is that of Artisan's core plus
+the `quests:*` actions.
 
-Toutes les actions supportent les placeholders dynamiques via `PlaceholderEngine`.
+------|-------|
+| `command` | Runs a server command |
+| `player_command` | Runs a command as the player |
+| `player_message` | Sends a chat message |
+| `player_actionbar` | Shows an action bar message |
+| `player_title` | Shows a title/subtitle |
+| `player_bossbar` | Shows a boss bar |
+| `give_item` | Gives an item |
+
+All actions support dynamic placeholders via `PlaceholderEngine`.
 
 ---
 
 ## Configuration
 
-| Fichier | Contenu |
+| File | Content |
 |---------|---------|
-| `bukkit/src/main/resources/config.yml` | Config globale (BDD, langue) |
-| `bukkit/src/main/resources/quests/*.yml` | Definitions de groupes de quetes (Jackson YAML) |
-| `core/src/main/resources/lang/*.yml` | Fichiers de traduction |
-| `paper-plugin.yml` | Descripteur plugin Paper |
+| `core/src/main/resources/config.yml` | Global config (DB, language, `content_source`) |
+| `bukkit/src/main/resources/quests/*.yml` | Quest group definitions (Jackson YAML) |
+| `core/src/main/resources/lang/*.yml` | Translation files |
+| `plugin.yml` | Plugin descriptor (Paper, Folia, Spigot) |
 
-Les configs de quetes sont chargees par `QuestConfigYamlRepository` avec Jackson (`SNAKE_CASE` naming strategy).
+Quest configs are loaded by `QuestConfigYamlRepository` with Jackson (`SNAKE_CASE` naming strategy),
+or by `QuestGroupDocumentRepository` with `content_source: artisan`.
+
+### Content source (`content_source`) and migration
+
+Read at startup only; a change requires a restart (`/msquests reload` points it out).
+
+| `content_source` | Content | Progress |
+|---|---|---|
+| `legacy` (default) | `quests/*.yml` | `msquests_*`, by `(group_key, quest_key)` |
+| `artisan` | `<project>/quest_groups/<group>.yaml` of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
+
+A Document carries an immutable `uid` (ULID) for the group and for each quest; the group
+key is the file name, renamable like quest keys without losing progress.
+`QuestGroupDocumentReader` produces the same `QuestGroupConfigDTO` as the YAML reader (`ltext`
+texts resolved in the manifest's `default_lang`, `duration` as `24h`/`90m`, cron with
+`reset.timezone`) and rejects the whole file on an error, with the path of the faulty value first:
+missing or already taken `uid` (server-wide), repeated objective key in a
+quest, etc. A group key is unique on the server, since commands and placeholders
+name a group by its key alone: two projects carrying `daily.yaml` are reported with both
+paths, and neither loads (a reload is then refused as a whole). Actions and conditions keep the MSQuests format for now (`type: ...`).
+
+Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
+
+1. `/msquests migrate` (dry run): converts in memory, re-reads each produced Document and
+   compares it with the original group, counts what the database copy will do, and writes
+   `migration/report-<date>.txt`. Nothing else is written.
+2. `/msquests migrate --confirm`: writes the missing Documents into the `quests` module folder
+   (`plugins/Artisan/modules/quests/`, created if missing; never over
+   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (`(group, key) -> uid`, `objective -> stage`). Re-run,
+   it keeps the same `uid`s.
+3. `content_source: artisan` then restart: before any loading, `LegacyDataCopier`
+   copies `msquests_*` into `artisan_quests_*` in one transaction (counts verified, otherwise
+   rollback), only once. Without `map.yaml` while `msquests_quest` has rows, the
+   plugin refuses to start.
+4. `/msquests stats` before and after to compare. Rollback: `content_source: legacy`
+   or the old jar; progress made in the meantime stays in `artisan_quests_*`.
 
 ---
 
-## Dependencies cles
+## Key dependencies
 
-| Dependance | Version | Module | Usage |
+| Dependency | Version | Module | Usage |
 |------------|---------|--------|-------|
-| Paper API | 1.21.8 | bukkit | API serveur Minecraft |
-| Lamp | 4.0.0-rc.16 | bukkit | Framework de commandes annotation-driven |
-| BoostedYAML | 1.3.7 | bukkit | Chargement config avec auto-update |
-| FoliaLib | 0.5.1 | bukkit | Abstraction scheduler compatible Folia |
-| PlaceholderAPI | 2.11.6 | bukkit | Placeholders (optionnel) |
-| zMenu | 1.1.1.0 | bukkit | Integration menus GUI (optionnel) |
-| Jackson | 2.20.0 | core, bukkit | Serialisation JSON/YAML |
-| json-schema-validator | 1.5.9 | core, bukkit | Validation des configs d'objectifs/actions |
-| cron-utils | 9.2.1 | core | Expressions cron pour reset/expiration |
-| JDBI 3 | 3.49.6 | database | Abstraction SQL |
-| HikariCP | 5.1.0 | database | Pool de connexions |
-| H2 | 2.3.232 | database | BDD embarquee (dev/test) |
-| MockBukkit | 4.41.0 | bukkit (test) | Mock du serveur Bukkit |
+| Paper API | 1.21.8 | bukkit | Minecraft server API |
+| Lamp | 4.0.0-rc.16 | bukkit | Annotation-driven command framework |
+| BoostedYAML | 1.3.7 | bukkit | Config loading with auto-update |
+| FoliaLib | 0.5.1 | bukkit | Folia-compatible scheduler abstraction |
+| PlaceholderAPI | 2.11.6 | bukkit | Placeholders (optional) |
+| zMenu | 1.1.1.0 | bukkit | GUI menu integration (optional) |
+| Jackson | 2.20.0 | core, bukkit | JSON/YAML serialization |
+| json-schema-validator | 1.5.9 | core, bukkit | Objective/action config validation |
+| cron-utils | 9.2.1 | core | Cron expressions for reset/expiration |
+| JDBI 3 | 3.49.6 | database | SQL abstraction |
+| HikariCP | 5.1.0 | database | Connection pool |
+| H2 | 2.3.232 | database | Embedded DB (dev/test) |
+| MockBukkit | 4.41.0 | bukkit (test) | Bukkit server mock |
 | Mockito | 5.14.2 | bukkit (test) | Mocking |
-| TestContainers | 1.19.7 | database (test) | Container MySQL pour tests d'integration |
+| TestContainers | 1.19.7 | database (test) | MySQL container for integration tests |
 
 ---
 
 ## Tests
 
-| Type | Module | Outil | Prerequis |
+| Type | Module | Tool | Prerequisite |
 |------|--------|-------|-----------|
-| Tests unitaires objectifs | bukkit | MockBukkit + Mockito | - |
-| Tests unitaires config | bukkit, core | JUnit 5 | - |
-| Tests d'integration SQL | database | TestContainers MySQL | Docker |
-| Tests utilitaires | core | JUnit 5 | - |
+| Objective unit tests | bukkit | MockBukkit + Mockito | - |
+| Config unit tests | bukkit, core | JUnit 5 | - |
+| SQL integration tests | database | TestContainers MySQL | Docker |
+| Utility tests | core | JUnit 5 | - |
 
-**Classe de base** : `AbstractObjectiveHandlerTest` fournit le setup MockBukkit, les mocks du plugin/registries, et un helper `createObjective()` qui construit la chaine actor -> quest -> stage -> objective.
+**Base class**: `AbstractObjectiveHandlerTest` provides the MockBukkit setup, the plugin/registry mocks, and a `createObjective()` helper that builds the actor -> quest -> stage -> objective chain.
 
 ---
 
-## Guidelines de developpement
+## Development guidelines
 
-### Principes d'architecture
+### Architecture principles
 
-1. **Core platform-agnostic** : Ne jamais importer de classes Bukkit dans `core/`. Toute interaction plateforme passe par `MSQuestsPlatform` ou `EventDispatcher`.
+1. **Platform-agnostic core**: Never import Bukkit classes in `core/`. All platform interaction goes through `MSQuestsPlatform` or `EventDispatcher`.
 
-2. **Separation des responsabilites** :
-   - **Config** (`QuestConfig`, `QuestObjectiveConfig`) = template immutable charge depuis YAML
-   - **Instance** (`Quest`, `QuestObjective`) = etat runtime mutable
-   - **DTO** = transport entre couches (persistance, serialisation)
-   - **Mapper** = conversion entre domaine et DTO
+2. **Separation of responsibilities**:
+   - **Config** (`QuestConfig`, `QuestObjectiveConfig`) = immutable template loaded from YAML
+   - **Instance** (`Quest`, `QuestObjective`) = mutable runtime state
+   - **DTO** = transport between layers (persistence, serialization)
+   - **Mapper** = conversion between domain and DTO
 
-3. **Registres = source de verite en memoire** : Les registres sont la reference pour l'etat courant. La BDD est la persistance, pas la source de verite a runtime.
+3. **Registries = in-memory source of truth**: The registries are the reference for the current state. The DB is persistence, not the source of truth at runtime.
 
-4. **Persistence toujours async** : Jamais de `CompletableFuture.join()` ou `.get()` sur le thread principal. Utiliser les callbacks.
+4. **Persistence always async**: Never `CompletableFuture.join()` or `.get()` on the main thread. Use callbacks.
 
-### Conventions de code
+### Code conventions
 
-5. **Thread safety** : Utiliser `ConcurrentHashMap` pour les collections partagees. `AtomicInteger` pour les compteurs. `AtomicQuestExecutor` pour les mutations de quetes.
+5. **Thread safety**: Use `ConcurrentHashMap` for shared collections. `AtomicInteger` for counters. `AtomicQuestExecutor` for quest mutations.
 
-6. **Nommage des types** :
-   - Objectif : `XxxObjective`, `XxxObjectiveConfig`, `XxxObjectiveHandler`
-   - Action : `XxxAction` avec `@ActionType("xxx")`
-   - Condition : `XxxCondition` avec type string
+6. **Type naming**:
+   - Objective: `XxxObjective`, `XxxObjectiveConfig`, `XxxObjectiveHandler`
 
-7. **Annotations obligatoires** :
-   - `@ObjectiveType("type_key")` sur les classes `ObjectiveConfig`
-   - `@ActionType("type_key")` sur les classes `Action`
-   - `@ConfigField` sur les champs de config pour la generation de schema JSON
+7. **Required annotations**:
+   - `@ObjectiveType("type_key")` on `ObjectiveConfig` classes
+   - `@ConfigField` on config fields for JSON schema generation
 
-8. **Enregistrement dans le plugin** : Tout nouveau type (objectif, action, condition, acteur) doit etre enregistre dans `BukkitQuestsPlugin.onEnable()` via la factory correspondante.
+8. **Registration in the plugin**: Every new type (objective, actor) must be registered in `BukkitQuestsPlugin.onEnable()` via the matching factory.
 
-### Ajout d'un type d'objectif
+### Adding an objective type
 
-1. Creer `XxxObjectiveConfig.java` dans `bukkit/.../quest/objective/xxx/` avec `@ObjectiveType(ObjectiveTypes.XXX)`
-2. Creer `XxxObjective.java` extends `AbstractQuestObjective<XxxObjectiveConfig>`
-3. Creer `XxxObjectiveHandler.java` extends `BukkitQuestObjectiveHandler<XxxObjective>` avec le listener Bukkit
-4. Ajouter la constante dans `ObjectiveTypes.java`
-5. Enregistrer dans `BukkitQuestsPlugin.registerObjectiveTypes()`
+1. Create `XxxObjectiveConfig.java` in `bukkit/.../quest/objective/xxx/` with `@ObjectiveType(ObjectiveTypes.XXX)`
+2. Create `XxxObjective.java` extends `AbstractQuestObjective<XxxObjectiveConfig>`
+3. Create `XxxObjectiveHandler.java` extends `BukkitQuestObjectiveHandler<XxxObjective>` with the Bukkit listener
+4. Add the constant in `ObjectiveTypes.java`
+5. Register in `BukkitQuestsPlugin.registerObjectiveTypes()`
 
-### Ajout d'un type d'action
+### Adding an action
 
-1. Creer `XxxAction.java` extends `BukkitQuestAction` avec `@ActionType("xxx")`
-2. Enregistrer dans `BukkitQuestsPlugin.registerActionTypes()`
-
-### Ajout d'une condition
-
-1. Creer `XxxCondition.java` extends `BukkitObjectiveCondition`
-2. Enregistrer dans `BukkitQuestsPlugin.registerConditionTypes()`
+An action usable in quest chains is declared on the Artisan side: in Artisan's
+core if it is generic, otherwise as a `quests:*` action in `QuestActions`
+(`ActionDeclaration` + handler, test in `QuestActionsTest`). No in-house condition:
+conditions are Artisan's.
 
 ### Tests
 
-9. **Chaque handler d'objectif doit avoir un test** : Etendre `AbstractObjectiveHandlerTest`, utiliser `createObjective()`, appeler les methodes du handler directement, verifier avec `Mockito.verify()` sur `progressObjective`.
+9. **Every objective handler must have a test**: Extend `AbstractObjectiveHandlerTest`, use `createObjective()`, call the handler methods directly, verify with `Mockito.verify()` on `progressObjective`.
 
-10. **Tests d'integration SQL** : Utiliser TestContainers. Les tests necessitent Docker. Lancer avec `./gradlew :database:test`.
+10. **SQL integration tests**: Use TestContainers. The tests require Docker. Run with `./gradlew :database:test`.
 
-11. **Ne pas mocker la BDD dans les tests d'integration** : Les repositories SQL doivent etre testes contre une vraie base (MySQL via TestContainers ou H2).
+11. **Do not mock the DB in integration tests**: The SQL repositories must be tested against a real database (MySQL via TestContainers or H2).
 
 ### Scheduler
 
-12. **Utiliser FoliaLib** : Ne jamais utiliser `Bukkit.getScheduler()`. Toujours passer par `plugin.getScheduler()` (FoliaLib) pour la compatibilite Folia.
+12. **Use FoliaLib**: Never use `Bukkit.getScheduler()`. Always go through `plugin.getScheduler()` (FoliaLib) for Folia compatibility.
 
-### Shadow JAR et relocation
+### Shadow JAR and relocation
 
-13. **Relocater les nouvelles dependances** : Toute nouvelle dependance runtime dans `bukkit/build.gradle` doit avoir une regle de relocation dans `shadowJar` pour eviter les conflits de classpath avec d'autres plugins.
+13. **Relocate new dependencies**: Every new runtime dependency in `bukkit/build.gradle` must have a relocation rule in `shadowJar` to avoid classpath conflicts with other plugins.
 
-### Git et build
+### Git and build
 
-14. **Verifier le build complet** : `./gradlew clean build` avant de commit. Le shadow JAR est copie automatiquement dans `docker/plugins/`.
+14. **Check the full build**: `./gradlew clean build` before committing. The shadow JAR is copied automatically to `docker/plugins/`.
 
-15. **Migrations SQL** : Pour tout changement de schema, creer une nouvelle classe `Migration` avec un numero de version incremente, et l'enregistrer dans `MigrationManager`.
+15. **SQL migrations**: For any schema change, create a new `Migration` class with an incremented version number, and register it in `MigrationManager`.
 
-## CI et releases
+## CI and releases
 
-`.github/workflows/build.yml` compile et teste a chaque push sur `master` et sur chaque PR, et
-publie le JAR en artefact du run. Un tag `vX.Y.Z` cree une release GitHub avec
-`artisanquests-X.Y.Z.jar` (version injectee via `-PpluginVersion`, reprise dans `paper-plugin.yml`).
-Un tag avec un tiret (`v1.2.0-beta.1`) donne une pre-release.
+`.github/workflows/build.yml` builds and tests every PR and uploads the JAR as a run artifact.
 
-`artisan-core-api` 1.6.0 vient de `https://repo.artisanmc.net/releases` (Reposilite d'Artisan), sans
-token.
+`.github/workflows/release.yml` publishes to `repo.artisanmc.net`, like the Artisan API and the
+other add-ons, under the group `net.artisanmc`: `artisan-quests` (the `bukkit` module's plain jar,
+without the shaded libraries), `artisan-quests-core` and `artisan-quests-database`, each with its
+sources and POM. Credentials: the secrets `ARTISAN_REPO_USERNAME` and `ARTISAN_REPO_PASSWORD`.
+
+- Each push to `master` publishes the version of `build.gradle`,
+  a `-SNAPSHOT`, to `/snapshots`.
+- An annotated tag `vX.Y.Z` (`git tag -a v1.0.0 -m "<notes>"`) builds version `X.Y.Z` (injected
+  with `-PpluginVersion`, expanded into `paper-plugin.yml`), publishes it to `/releases` and
+  attaches `artisanquests-X.Y.Z.jar` to a **draft** GitHub release whose notes are the tag's
+  message. Check the draft, then publish it by hand.
+
+An integration plugin (e.g. ArtisanGuildQuests) compiles against
+`net.artisanmc:artisan-quests-core` and `net.artisanmc:artisan-quests` (non-transitive), from
+`https://repo.artisanmc.net/snapshots` or `/releases`.
+
+`artisan-core-api` (version `artisanApiVersion` in `gradle.properties`) comes from
+`https://repo.artisanmc.net/releases` (Artisan's Reposilite), without a token.

@@ -1,6 +1,5 @@
 package com.github.ibanetchep.msquests.bukkit.artisan;
 
-import com.github.ibanetchep.msquests.bukkit.artisan.ArtisanFixtures.TestAction;
 import com.github.ibanetchep.msquests.bukkit.artisan.ArtisanFixtures.TestActor;
 import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
@@ -190,7 +189,7 @@ class QuestRowsTest {
 
 
 
-    // ------------------------------------------------------- catalog: le tree
+    // ------------------------------------------------------- catalog: the tree
 
     @Test
     @SuppressWarnings("unchecked")
@@ -263,22 +262,6 @@ class QuestRowsTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void rewardsAreAlsoExposedAsRowsSoAMenuCanIterateThem() {
-        mineStone.addReward(new TestAction("command", "<white>+150 XP"));
-        mineStone.addReward(new TestAction("give_item", null));
-
-        List<Map<String, Object>> rewards =
-                (List<Map<String, Object>>) QuestRows.questRow(group, mineStone, null, TRANSLATOR).get("rewards");
-
-        assertEquals(2, rewards.size());
-        assertEquals("command", rewards.get(0).get("type"));
-        assertEquals("<white>+150 XP", rewards.get(0).get("name"));
-        // Unnamed reward: the type stands in, same rule as rewards_lore.
-        assertEquals("give_item", rewards.get(1).get("name"));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
     void multiStageQuestsKeepTheirStagesOrderedAndIndexed() {
         QuestConfig epic = ArtisanFixtures.multiStageQuest(group, "epic", 3);
 
@@ -294,7 +277,6 @@ class QuestRowsTest {
 
     @Test
     void theWholeTreeStaysJsonShaped() {
-        mineStone.addReward(new TestAction("command", "+150 XP"));
         ArtisanFixtures.instance(actor, mineStone, QuestStatus.IN_PROGRESS, 34);
 
         assertJsonShaped(QuestRows.questRow(group, mineStone, actorGroup(), TRANSLATOR));

@@ -1,17 +1,15 @@
 package com.github.ibanetchep.msquests.core.mapper;
 
-import com.github.ibanetchep.msquests.core.dto.QuestActionDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
+import com.github.ibanetchep.msquests.core.dto.QuestConfigHooksDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestObjectiveConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestStageConfigDTO;
-import com.github.ibanetchep.msquests.core.factory.ConditionFactory;
-import com.github.ibanetchep.msquests.core.factory.QuestActionFactory;
 import com.github.ibanetchep.msquests.core.factory.QuestObjectiveFactory;
-import com.github.ibanetchep.msquests.core.quest.condition.Condition;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestObjectiveConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestStageConfig;
-import com.github.ibanetchep.msquests.core.quest.config.action.QuestAction;
+import com.github.ibanetchep.msquests.core.quest.config.action.ActionChain;
+import com.github.ibanetchep.msquests.core.quest.config.condition.Conditions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,13 +18,9 @@ import java.util.Objects;
 public class QuestConfigMapper {
 
     private final QuestObjectiveFactory questObjectiveFactory;
-    private final QuestActionFactory rewardTypeRegistry;
-    private final ConditionFactory conditionFactory;
 
-    public QuestConfigMapper(QuestObjectiveFactory questObjectiveFactory, QuestActionFactory rewardTypeRegistry, ConditionFactory conditionFactory) {
+    public QuestConfigMapper(QuestObjectiveFactory questObjectiveFactory) {
         this.questObjectiveFactory = questObjectiveFactory;
-        this.rewardTypeRegistry = rewardTypeRegistry;
-        this.conditionFactory = conditionFactory;
     }
 
     public QuestConfigDTO toDTO(QuestConfig entity) {
@@ -42,22 +36,20 @@ public class QuestConfigMapper {
             stageDtos.add(new QuestStageConfigDTO(stageConfig.getKey(), stageConfig.getName(), stageConfig.getFlow(), objectiveDtos));
         }
 
-        List<QuestActionDTO> rewards = new ArrayList<>();
-        if (entity.getRewards() != null) {
-            for (QuestAction questAction : entity.getRewards()) {
-                rewards.add(questAction.toDTO());
-            }
-        }
-
         return new QuestConfigDTO(
                 entity.getKey(),
                 entity.getName(),
                 entity.getDescription(),
                 entity.getDuration(),
                 entity.getTier(),
-                rewards,
+                entity.getRewards().steps(),
                 stageDtos,
-                null
+                entity.getRequirements().isEmpty() ? null : entity.getRequirements().conditions(),
+                entity.getUid(),
+                new QuestConfigHooksDTO(
+                        entity.getStartActions().steps(),
+                        entity.getObjectiveProgressActions().steps(),
+                        entity.getObjectiveCompleteActions().steps())
         );
     }
 
@@ -65,21 +57,15 @@ public class QuestConfigMapper {
         QuestConfig questConfig = new QuestConfig(dto.key(), dto.name(), dto.description(),
                 dto.duration() != null ? dto.duration() : 0L); // absent: no limit, instead of an unboxing NPE
         questConfig.setTier(dto.tier());
+        questConfig.setUid(dto.uid());
 
-        if (dto.rewards() != null) {
-            for (QuestActionDTO rewardDto : dto.rewards()) {
-                QuestAction questAction = rewardTypeRegistry.createAction(rewardDto);
-                questConfig.addReward(questAction);
-            }
+        questConfig.setRewards(ActionChain.of(dto.rewards()));
+        if (dto.hooks() != null) {
+            questConfig.setStartActions(ActionChain.of(dto.hooks().start()));
+            questConfig.setObjectiveProgressActions(ActionChain.of(dto.hooks().objectiveProgress()));
+            questConfig.setObjectiveCompleteActions(ActionChain.of(dto.hooks().objectiveComplete()));
         }
-
-        if (dto.conditions() != null) {
-            List<Condition> conditions = dto.conditions().stream()
-                    .map(conditionFactory::build)
-                    .filter(Objects::nonNull)
-                    .toList();
-            questConfig.setConditions(conditions);
-        }
+        questConfig.setRequirements(Conditions.of(dto.requirements()));
 
         for (QuestStageConfigDTO stageDto : dto.stages()) {
             QuestStageConfig stageConfig = new QuestStageConfig(stageDto.key(), stageDto.name(), stageDto.flow());

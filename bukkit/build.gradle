@@ -8,7 +8,6 @@ repositories {
         url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/'
     }
     maven { url = 'https://repo.groupez.dev/releases' }
-    // artisan-core-api: 1.0.0-SNAPSHOT follows Artisan's main branch.
     maven { url = 'https://repo.artisanmc.net/releases' }
 }
 
@@ -19,15 +18,14 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly('me.clip:placeholderapi:2.11.6')
     compileOnly("fr.maxlego08.menu:zmenu-api:1.1.1.0")
-    // Artisan integration — provided at runtime by the Artisan plugin, never shaded.
-    // Released API version (SemVer of the API, `Since` column of Artisan's api-surface.md),
-    // served by repo.artisanmc.net/releases.
-    compileOnly("net.artisanmc:artisan-core-api:1.6.0")
-    compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    // Artisan — a required dependency, provided at runtime by the Artisan plugin, never shaded.
+    // Compiled against a published API (repo.artisanmc.net); the runtime minimum stays
+    // ArtisanIntegration.MIN_API_VERSION, and newer calls are guarded by isCompatibleWith.
+    compileOnly("net.artisanmc:artisan-core-api:${artisanApiVersion}")
     implementation("com.tcoded:FoliaLib:0.5.1")
-    implementation("io.github.revxrsal:lamp.common:4.0.0-rc.16")
-    implementation("io.github.revxrsal:lamp.bukkit:4.0.0-rc.16")
-    implementation("io.github.revxrsal:lamp.brigadier:4.0.0-rc.16")
+    implementation("io.github.revxrsal:lamp.common:4.0.0-rc.18")
+    implementation("io.github.revxrsal:lamp.bukkit:4.0.0-rc.18")
+    implementation("io.github.revxrsal:lamp.brigadier:4.0.0-rc.18")
     implementation("dev.dejvokep:boosted-yaml:1.3.7")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.20.0")
     implementation("com.fasterxml.jackson.core:jackson-core:2.20.0")
@@ -36,9 +34,9 @@ dependencies {
     implementation(group: 'com.networknt', name: 'json-schema-validator', version: '1.5.9')
 
     testImplementation("com.tcoded:FoliaLib:0.5.1")
-    testImplementation("io.github.revxrsal:lamp.common:4.0.0-rc.16")
-    testImplementation("io.github.revxrsal:lamp.bukkit:4.0.0-rc.16")
-    testImplementation("io.github.revxrsal:lamp.brigadier:4.0.0-rc.16")
+    testImplementation("io.github.revxrsal:lamp.common:4.0.0-rc.18")
+    testImplementation("io.github.revxrsal:lamp.bukkit:4.0.0-rc.18")
+    testImplementation("io.github.revxrsal:lamp.brigadier:4.0.0-rc.18")
     testImplementation("dev.dejvokep:boosted-yaml:1.3.7")
     testImplementation("com.fasterxml.jackson.core:jackson-databind:2.20.0")
     testImplementation("com.fasterxml.jackson.core:jackson-core:2.20.0")
@@ -51,15 +49,14 @@ dependencies {
     testImplementation("com.h2database:h2:2.3.232")
     testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.41.0")
     testImplementation("org.mockito:mockito-core:5.14.2")
-    testImplementation("net.artisanmc:artisan-core-api:1.6.0")
-    testImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    testImplementation("net.artisanmc:artisan-core-api:${artisanApiVersion}")
 }
 
 processResources {
     def props = [version: version]
     inputs.properties props
     filteringCharset 'UTF-8'
-    filesMatching('paper-plugin.yml') {
+    filesMatching('plugin.yml') {
         expand props
     }
 }
@@ -68,6 +65,9 @@ shadowJar {
     archiveFileName = "artisanquests-${version}.jar"
     archiveClassifier.set('')
     relocate 'com.tcoded.folialib', 'com.github.ibanetchep.msquests.libs.folialib'
+    // Lamp is shaded by other plugins of the server too (Core): unrelocated, a plugin that loads
+    // after this one can link half of Lamp from this jar and half from its own (LinkageError).
+    relocate 'revxrsal.commands', 'com.github.ibanetchep.msquests.libs.lamp'
 }
 
 // The shaded jar shares its coordinates with the plain jar; publish only the latter, which is
