@@ -32,6 +32,7 @@ quest_admin:
 quest:
   command:
     # Placeholders de quête
+    started: '<green>Quête commencée : <white>%quest_name%</white>.</green>'
     tracked: '<green>Tu suis désormais la quête <white>%quest_name%</white>.</green>'
     untracked: '<yellow>Tu ne suis plus aucune quête.</yellow>'
     # Pas encore utilisée par le code (aucun placeholder garanti)

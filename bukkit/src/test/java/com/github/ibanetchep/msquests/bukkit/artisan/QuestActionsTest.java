@@ -230,6 +230,77 @@ class QuestActionsTest {
 
     // ------------------------------------------------------------ L3 actions
 
+    private PlayerProfile profileFor(@org.jetbrains.annotations.Nullable Quest tracked) {
+        PlayerProfile profile = new PlayerProfile(playerId, "Steve");
+        if (tracked != null) profile.setTrackedQuestId(tracked.getId());
+        PlayerProfileRegistry profiles = mock(PlayerProfileRegistry.class);
+        when(profiles.getPlayerProfile(playerId)).thenReturn(profile);
+        when(plugin.getPlayerProfileRegistry()).thenReturn(profiles);
+        when(plugin.getPlayerProfileService()).thenReturn(mock(PlayerProfileService.class));
+        when(plugin.getTrackingBossBarService()).thenReturn(mock(TrackingBossBarService.class));
+        return profile;
+    }
+
+    /** startQuest answers SUCCESS and leaves the instance on the actor, as the real service does. */
+    private Quest[] startsOnCall(com.github.ibanetchep.msquests.core.quest.config.QuestConfig config) {
+        Quest[] started = new Quest[1];
+        when(lifecycle.startQuest(any(), any(), any(), any())).thenAnswer(call -> {
+            started[0] = ArtisanFixtures.instance(actor, config, QuestStatus.IN_PROGRESS, 0);
+            return com.github.ibanetchep.msquests.core.quest.result.QuestStartResult.SUCCESS;
+        });
+        return started;
+    }
+
+    @Test
+    void startTracksTheQuestWhenThePlayerFollowsNone() {
+        loadTranslator();
+        PlayerProfile profile = profileFor(null);
+        Quest[] started = startsOnCall(mineStone);
+
+        run("quests:start", Map.of("group", "daily", "quest", "mine_stone"));
+
+        assertEquals(started[0].getId(), profile.getTrackedQuestId());
+        verify(player).sendMessage(anyString());
+    }
+
+    @Test
+    void startTakesTheSlotOfATrackedQuestThatIsFinished() {
+        loadTranslator();
+        QuestConfig other = ArtisanFixtures.quest(daily, "other", "easy");
+        PlayerProfile profile = profileFor(ArtisanFixtures.instance(actor, other, QuestStatus.COMPLETED, 64));
+        Quest[] started = startsOnCall(mineStone);
+
+        run("quests:start", Map.of("group", "daily", "quest", "mine_stone"));
+
+        assertEquals(started[0].getId(), profile.getTrackedQuestId());
+    }
+
+    @Test
+    void startLeavesAQuestThePlayerStillFollows() {
+        loadTranslator();
+        QuestConfig other = ArtisanFixtures.quest(daily, "other", "easy");
+        Quest followed = ArtisanFixtures.instance(actor, other, QuestStatus.IN_PROGRESS, 3);
+        PlayerProfile profile = profileFor(followed);
+        startsOnCall(mineStone);
+
+        run("quests:start", Map.of("group", "daily", "quest", "mine_stone"));
+
+        assertEquals(followed.getId(), profile.getTrackedQuestId());
+    }
+
+    @Test
+    void aRefusedStartTracksNothing() {
+        loadTranslator();
+        PlayerProfile profile = profileFor(null);
+        when(lifecycle.startQuest(any(), any(), any(), any()))
+                .thenReturn(com.github.ibanetchep.msquests.core.quest.result.QuestStartResult.MAX_ACTIVE_REACHED);
+
+        run("quests:start", Map.of("group", "daily", "quest", "mine_stone"));
+
+        assertNull(profile.getTrackedQuestId());
+        verify(player).sendMessage(anyString());
+    }
+
     @Test
     void abandonFailsTheActiveInstanceAndUntracksIt() {
         loadTranslator();

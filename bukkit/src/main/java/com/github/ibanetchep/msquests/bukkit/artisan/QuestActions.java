@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * The {@code quests:*} actions Artisan chains may call (menus, commands, dialogs). Each one names
@@ -141,8 +142,34 @@ final class QuestActions {
         PlayerProfile profile = plugin.getPlayerProfileRegistry().getPlayerProfile(player.getUniqueId());
         QuestStartResult result = plugin.getQuestLifecycleService().startQuest(
                 target.actor, target.config, target.group.getDistributionStrategy(), profile);
-        MessageBuilder.translatable(result).send(player);
+        Quest started = result.isSuccess() ? activeInstance(target) : null;
+        if (started == null) {
+            MessageBuilder.translatable(result).send(player);
+            return ctx;
+        }
+        // The player chose this quest (an NPC, a menu button): say which one, and follow it
+        // unless they already follow another, or nothing on screen tells them what to do next.
+        MessageBuilder.translatable(TranslationKey.QUEST_COMMAND_STARTED)
+                .applyPlaceholderResolver(started)
+                .send(player);
+        if (profile != null && !tracksAnActiveQuest(profile)) {
+            profile.setTrackedQuestId(started.getId());
+            plugin.getPlayerProfileService().saveProfile(profile);
+            if (plugin.getTrackingBossBarService().isEnabled()) {
+                plugin.getTrackingBossBarService().showBossBar(player);
+            }
+        }
         return ctx;
+    }
+
+    /** Whether the quest the player tracks is still one they can advance: a finished one frees the slot. */
+    private boolean tracksAnActiveQuest(PlayerProfile profile) {
+        UUID tracked = profile.getTrackedQuestId();
+        if (tracked == null) return false;
+        return plugin.getQuestActorRegistry().getActors().values().stream()
+                .filter(actor -> actor.isMember(profile.getId()))
+                .map(actor -> actor.getQuests().get(tracked))
+                .anyMatch(quest -> quest != null && quest.isActive());
     }
 
     /**
@@ -325,6 +352,10 @@ final class QuestActions {
     private @Nullable Quest activeQuest(String action, ActionContext ctx, Map<String, Object> args, ActionRuntime runtime) {
         Target target = target(action, ctx, args, runtime, true);
         if (target == null) return null;
+        return activeInstance(target);
+    }
+
+    private static @Nullable Quest activeInstance(Target target) {
         String groupKey = target.group.getKey();
         String questKey = target.config.getKey();
         return target.actor.getQuests().values().stream()

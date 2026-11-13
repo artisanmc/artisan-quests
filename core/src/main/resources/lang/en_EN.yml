@@ -32,6 +32,7 @@ quest_admin:
 quest:
   command:
     # Quest placeholders
+    started: '<green>Quest started: <white>%quest_name%</white>.</green>'
     tracked: '<green>You are now tracking <white>%quest_name%</white>.</green>'
     untracked: '<yellow>You are no longer tracking a quest.</yellow>'
     # Not referenced by code yet (no placeholders guaranteed)

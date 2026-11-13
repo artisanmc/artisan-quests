@@ -39,7 +39,7 @@ The plugin is called `ArtisanQuests` (`name:` in `plugin.yml`). The code keeps t
 | Plugin name | `ArtisanQuests` | `MSQuests` through `provides:` (`depend: [MSQuests]` still resolves) |
 | Data folder | `plugins/ArtisanQuests/` | `plugins/MSQuests/` copied on first start (`LegacyDataFolderMigration`); the original is kept for a rollback |
 | Admin command | `/artisanquests` | `/msquests` |
-| Permissions | `artisanquests.player`, `.rotate`, `.admin` | `msquests.player`, `.rotate`, `.admin`, `msquests.*`: declared in `plugin.yml` with the new node as a child, so a LuckPerms group that grants them keeps its rights |
+| Permissions | `artisanquests.player`, `.rotate`, `.admin` (and `.journal`, new, for `/quests`) | `msquests.player`, `.rotate`, `.admin`, `msquests.*`: declared in `plugin.yml` with the new node as a child, so a LuckPerms group that grants them keeps its rights |
 | Jar | `artisanquests-<version>.jar` | |
 
 Unchanged on purpose: the Artisan module id and Presence `msquests`, its commands
@@ -183,7 +183,7 @@ is registered and declares:
 
 | Action | Arguments | Effect |
 |---|---|---|
-| `quests:start` | `group`, `quest` | Starts the quest for the player's actor, with the group's rules (limits, requirements) |
+| `quests:start` | `group`, `quest` | Starts the quest for the player's actor, with the group's rules (limits, requirements); names it in chat and tracks it when the player tracks no quest still in progress |
 | `quests:abandon` | `group`, `quest` | Abandons the active instance: it becomes `FAILED` and still counts in the period; if tracked, it no longer is |
 | `quests:track` | `group`, `quest` | Tracks / untracks the active instance (like `msquests:track`) |
 | `quests:rotate` | `group`, `quest` | Swaps the active instance for another one of the group |
@@ -318,6 +318,15 @@ context: groups and quests show the draft at neutral state, `quests:active` the 
 attempts laid over the document:
 `QuestSourceVectorsTest` (plugin) and `sourceRows.test.ts` (editor) read the same files.
 The bundle still declares SDK 1.10, so it loads on an older Artisan.
+
+**Quest journal.** `/quests` (player command `msquests:journal`, permission
+`artisanquests.journal`, granted to everyone) opens the menu `quests:journal`: the quests in
+progress from `quests:active`, the tracked one glowing, a click tracks or untracks
+(`quests:track`). The menu ships as a system file (`artisan-templates/system/menus/journal.yaml`,
+template `quests_files`): Artisan keeps it in the module's folder, where the admin edits it in the
+editor, and writes the command as `commands/quests.yml` (name, aliases, permission). An active row
+carries `objective_name`, `objective_progress` and `objective_target`, the objective to do next,
+so the journal names it without walking `stages`. Raise `SYSTEM_VERSION` when the menu changes.
 
 Three commands callable from a menu button: `msquests:track <id>` (toggle),
 `msquests:rotate <id>` and `msquests:contribute <id>`, where `<id>` is either an instance's UUID
@@ -579,7 +588,7 @@ Read at startup only; a change requires a restart (`/msquests reload` points it 
 | `content_source` | Content | Progress |
 |---|---|---|
 | `legacy` (default) | `quests/*.yml` | `msquests_*`, by `(group_key, quest_key)` |
-| `artisan` | `<project>/quest_groups/<group>.yaml` of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
+| `artisan` | `<project>/quest_groups/<group>.yml` (or `.yaml`, the `.yml` copy wins) of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
 
 A Document carries an immutable `uid` (ULID) for the group and for each quest; the group
 key is the file name, renamable like quest keys without losing progress.
