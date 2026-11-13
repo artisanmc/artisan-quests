@@ -133,7 +133,7 @@ class QuestActionsTest {
     @Test
     void declaresTheQuestActionsWithAGroupPicker() {
         assertEquals(java.util.Set.of("quests:start", "quests:track", "quests:rotate", "quests:complete",
-                "quests:distribute", "quests:abandon", "quests:action_bar", "quests:boss_bar"), actions.keySet());
+                "quests:distribute", "quests:abandon", "quests:advance", "quests:action_bar", "quests:boss_bar"), actions.keySet());
         for (ActionDeclaration declaration : actions.values()) {
             if (declaration.getName().endsWith("_bar")) continue; // display actions, no group
             ModelField group = declaration.arg("group");

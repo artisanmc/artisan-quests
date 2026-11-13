@@ -117,6 +117,12 @@ public final class QuestGroupDocumentWriter {
         if (quest.requirements() != null && !quest.requirements().isEmpty()) {
             out.put("requirements", quest.requirements());
         }
+        if (quest.giver() != null) {
+            Map<String, Object> giver = new LinkedHashMap<>();
+            giver.put("npc", quest.giver().npc());
+            putIfSet(giver, "conversation", quest.giver().conversation());
+            out.put("giver", giver);
+        }
 
         List<Object> stageList = new ArrayList<>();
         for (QuestStageConfigDTO stage : stages) {

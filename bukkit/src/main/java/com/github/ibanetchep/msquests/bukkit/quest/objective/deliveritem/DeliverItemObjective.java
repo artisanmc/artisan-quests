@@ -79,6 +79,41 @@ public class DeliverItemObjective extends AbstractQuestObjective<DeliverItemObje
                 Map.of("material", placeholders.get("material"), "amount", String.valueOf(taken)));
     }
 
+    /**
+     * How many matching items the player carries, counted where {@link #contribute} would take them
+     * and without touching them: an NPC only takes a delivery that completes the objective.
+     */
+    public int available(Player player) {
+        ItemTarget target = getObjectiveConfig().getItem();
+        if (target.isAny()) return 0;
+        ItemStackApi api = items.get();
+        Predicate<ItemStack> wanted = stack -> target.test(stack, api);
+        PlayerInventory inventory = player.getInventory();
+        int count = count(inventory, wanted);
+        if (includeShulkerBoxes) {
+            for (ItemStack item : inventory.getStorageContents()) {
+                if (item != null && item.getItemMeta() instanceof BlockStateMeta meta
+                        && meta.getBlockState() instanceof ShulkerBox box) {
+                    count += count(box.getInventory(), wanted);
+                }
+            }
+        }
+        return count;
+    }
+
+    /** Whether the player carries all that is still missing. */
+    public boolean canComplete(Player player) {
+        return available(player) >= getTarget() - getProgress();
+    }
+
+    private static int count(Inventory inventory, Predicate<ItemStack> wanted) {
+        int count = 0;
+        for (ItemStack stack : inventory.getStorageContents()) {
+            if (stack != null && !stack.getType().isAir() && wanted.test(stack)) count += stack.getAmount();
+        }
+        return count;
+    }
+
     /** Removes up to {@code max} items matching {@code wanted}, slot by slot, and returns how many went. */
     private static int take(Inventory inventory, Predicate<ItemStack> wanted, int max) {
         ItemStack[] contents = inventory.getStorageContents();

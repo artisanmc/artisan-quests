@@ -26,6 +26,7 @@ public class QuestConfig implements PlaceholderProvider {
     private String tier;
     private QuestGroupConfig group;
     private Conditions requirements = Conditions.NONE;
+    private @Nullable QuestGiver giver;
 
     public QuestConfig(String key, String name, String description, long duration) {
         this.key = key;
@@ -146,6 +147,15 @@ public class QuestConfig implements PlaceholderProvider {
 
     public void setRequirements(Conditions requirements) {
         this.requirements = requirements;
+    }
+
+    /** The NPC that hands this quest out, null for a quest started another way (menu, distribution, action). */
+    public @Nullable QuestGiver getGiver() {
+        return giver;
+    }
+
+    public void setGiver(@Nullable QuestGiver giver) {
+        this.giver = giver;
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.github.ibanetchep.msquests.bukkit.document;
 
+import com.github.ibanetchep.msquests.core.quest.config.QuestGiver;
 import com.github.ibanetchep.msquests.core.dto.DistributionConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigHooksDTO;
@@ -229,10 +230,20 @@ public final class QuestGroupDocumentReader {
                     stages,
                     quest.get("requirements") != null ? conditions(quest.get("requirements"), path + ".requirements") : null,
                     uid,
-                    hooks);
+                    hooks,
+                    giver(quest.get("giver"), path + ".giver"));
         } catch (IllegalArgumentException e) {
             throw new DocumentException(path, e.getMessage());
         }
+    }
+
+    /** {@code giver: {npc, conversation}}: the NPC that hands the quest out, null when the quest names none. */
+    private static @Nullable QuestGiver giver(@Nullable Object value, String path) {
+        if (value == null) return null;
+        Map<String, Object> giver = map(value, path);
+        String npc = string(giver.get("npc"), path + ".npc");
+        if (npc == null || npc.isBlank()) throw new DocumentException(path + ".npc", "a giver names its NPC");
+        return new QuestGiver(npc.trim(), string(giver.get("conversation"), path + ".conversation"));
     }
 
     private static Flow flow(String flow, String path) {

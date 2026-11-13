@@ -52,6 +52,17 @@ export const OBJECTIVE_TYPES: ObjectiveSpec[] = [
       { name: "item", kind: "item", legacy: "material" },
       amount,
       { name: "itemKey", kind: "text", advanced: true },
+      { name: "npc", kind: "text", advanced: true },
+      { name: "conversation", kind: "text", advanced: true },
+      { name: "missing", kind: "text", advanced: true },
+    ],
+  },
+  {
+    type: "talk_npc",
+    icon: "💬",
+    params: [
+      { name: "npc", kind: "text", required: true },
+      { name: "conversation", kind: "text" },
     ],
   },
   { type: "kill_entity", icon: "⚔", params: [{ name: "entity_type", kind: "entity" }, amount] },

@@ -85,6 +85,26 @@ class QuestGroupDocumentRepositoryTest {
     }
 
     @Test
+    void readsTheNpcThatGivesAQuest() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
+                    giver: { npc: bruno, conversation: bruno_offer }
+                """));
+
+        QuestConfigDTO mine = load().groups().get("daily").quests().getFirst();
+
+        assertEquals(new com.github.ibanetchep.msquests.core.quest.config.QuestGiver("bruno", "bruno_offer"), mine.giver());
+    }
+
+    @Test
+    void aGiverWithoutNpcIsReportedByPath() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
+                    giver: { conversation: bruno_offer }
+                """));
+
+        assertTrue(load().groups().isEmpty());
+    }
+
+    @Test
     void questHooksAreReadFromActions() throws Exception {
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
                     actions:

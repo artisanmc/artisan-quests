@@ -1,7 +1,9 @@
 package com.github.ibanetchep.msquests.bukkit.quest.objective.deliveritem;
 
 import com.github.ibanetchep.msquests.bukkit.quest.objective.ItemTarget;
+import com.github.ibanetchep.msquests.bukkit.quest.objective.NpcBound;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.ObjectiveTypes;
+import org.jetbrains.annotations.Nullable;
 import com.github.ibanetchep.msquests.core.dto.QuestObjectiveConfigDTO;
 import com.github.ibanetchep.msquests.core.lang.Translator;
 import com.github.ibanetchep.msquests.core.quest.config.QuestObjectiveConfig;
@@ -14,7 +16,7 @@ import java.util.Map;
 
 @ObjectiveType(ObjectiveTypes.DELIVER_ITEM)
 @AtLeastOneOfFields({"item", "material", "itemKey"})
-public class DeliverItemObjectiveConfig extends QuestObjectiveConfig {
+public class DeliverItemObjectiveConfig extends QuestObjectiveConfig implements NpcBound {
 
     /** {@code item} + {@code match}, or the legacy {@code material}. */
     @ConfigField(name = "item")
@@ -26,9 +28,23 @@ public class DeliverItemObjectiveConfig extends QuestObjectiveConfig {
     @ConfigField(name = "amount")
     private int amount = 1;
 
+    /** The NPC the items are brought to; none: delivered from a menu ({@code msquests:contribute}). */
+    @ConfigField(name = "npc")
+    private final @Nullable String npc;
+
+    @ConfigField(name = "conversation")
+    private final @Nullable String conversation;
+
+    /** Played by the NPC while the player does not carry the whole amount. */
+    @ConfigField(name = "missing")
+    private final @Nullable String missing;
+
     public DeliverItemObjectiveConfig(QuestObjectiveConfigDTO dto) {
         super(dto);
         item = ItemTarget.read(dto.params(), "material");
+        npc = NpcBound.text(dto.params().get("npc"));
+        conversation = NpcBound.text(dto.params().get("conversation"));
+        missing = NpcBound.text(dto.params().get("missing"));
 
         if(dto.params().containsKey("amount")) {
             amount = (int) dto.params().get("amount");
@@ -45,7 +61,25 @@ public class DeliverItemObjectiveConfig extends QuestObjectiveConfig {
         item.write(params);
         params.put("amount", amount);
         if (itemKey != null) params.put("itemKey", itemKey);
+        if (npc != null) params.put("npc", npc);
+        if (conversation != null) params.put("conversation", conversation);
+        if (missing != null) params.put("missing", missing);
         return new QuestObjectiveConfigDTO(getKey(), getType(), params);
+    }
+
+    @Override
+    public @Nullable String getNpc() {
+        return npc;
+    }
+
+    @Override
+    public @Nullable String getConversation() {
+        return conversation;
+    }
+
+    @Override
+    public @Nullable String getMissingConversation() {
+        return missing;
     }
 
     public int getAmount() {

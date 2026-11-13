@@ -79,6 +79,9 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     static final String GROUPS = "msquests:groups";
     static final String QUESTS = "msquests:quests";
     static final String ACTIVE = "msquests:active";
+    static final String NPC = "quests:npc";
+    /** The same rows under the legacy prefix, which is to go with the other {@code msquests:*} sources. */
+    static final String NPC_LEGACY = "msquests:npc";
 
     static final String GROUP_DIR = "quest_groups";
     static final String GROUP_SCHEMA = "quest_group/v1";
@@ -214,6 +217,31 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                 Stability.DYNAMIC,
                 null));
 
+        // DYNAMIC: what the quests expect from NPCs for one player, read by an NPC module.
+        QuestNpcs npcs = new QuestNpcs(plugin);
+        for (String ref : List.of(NPC, NPC_LEGACY)) api.getDataSources().register(new DataSourceDeclaration(
+                ref,
+                (player, params) -> npcRows(npcs, player, params),
+                List.of(
+                        new DataSourceField("id", ModelFieldType.string(), "group:quest[:objective]"),
+                        new DataSourceField("kind", ModelFieldType.string(),
+                                "objective (in progress, bound to the NPC) / offer (a quest the NPC gives, startable now)"),
+                        new DataSourceField("npc", ModelFieldType.string(), "NPC id, as the quest names it"),
+                        new DataSourceField("group", ModelFieldType.string(), null),
+                        new DataSourceField("quest", ModelFieldType.string(), "Quest key"),
+                        new DataSourceField("quest_name", ModelFieldType.string(), null),
+                        new DataSourceField("objective", ModelFieldType.string(), "Objective key, empty for an offer"),
+                        new DataSourceField("objective_type", ModelFieldType.string(), "talk_npc / deliver_item"),
+                        new DataSourceField("objective_name", ModelFieldType.string(), null),
+                        new DataSourceField("ready", ModelFieldType.bool(),
+                                "False while a delivery's items are not all carried"),
+                        new DataSourceField("conversation", ModelFieldType.string(),
+                                "Conversation to play: the objective's or giver's, `missing` when not ready, or empty"),
+                        new DataSourceField("progress", ModelFieldType.integer(), null),
+                        new DataSourceField("target", ModelFieldType.integer(), null)),
+                Stability.DYNAMIC,
+                null));
+
         api.getCommands().register(new CommandDeclaration("msquests:track",
                 (player, args) -> track(player, argv(args))));
         api.getCommands().register(new CommandDeclaration("msquests:rotate",
@@ -318,6 +346,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         api.getEvents().publish(new DataReloadEvent(GROUPS));
         api.getEvents().publish(new DataReloadEvent(QUESTS));
         api.getEvents().publish(new DataReloadEvent(ACTIVE));
+        api.getEvents().publish(new DataReloadEvent(NPC));
+        api.getEvents().publish(new DataReloadEvent(NPC_LEGACY));
     }
 
     // --------------------------------------------------------------- fetchers
@@ -398,6 +428,15 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         .thenComparing(quest -> quest.getId().toString()))
                 .map(quest -> QuestRows.activeRow(quest, tracked, translator))
                 .toList();
+    }
+
+    /** Params: {@code npc} (one NPC, else all of them) and {@code player} (else the viewer). */
+    private List<Map<String, Object>> npcRows(QuestNpcs npcs, @Nullable Player player, Map<String, ?> params) {
+        UUID targetId = targetId(player, params);
+        if (targetId == null) {
+            throw new PlayerRequiredException(NPC + " needs a player — pass the `player` parameter to preview it");
+        }
+        return npcs.rows(targetId, Bukkit.getPlayer(targetId), string(params.get("npc")));
     }
 
     // --------------------------------------------------------------- commands

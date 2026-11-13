@@ -207,6 +207,12 @@ function NumberField({
   );
 }
 
+/** Whether the group hands quests out by itself: it names a strategy other than `none`. */
+function givesAlone(distribution: Raw): boolean {
+  const strategy = typeof distribution.strategy === "string" ? distribution.strategy.toLowerCase() : "";
+  return strategy !== "" && strategy !== "none";
+}
+
 function setOrDelete(map: Raw, key: string, value: unknown) {
   if (value === undefined || value === "") delete map[key];
   else map[key] = value;
@@ -746,7 +752,19 @@ function QuestView({ ctx, group, index }: { ctx: Ctx; group: QuestGroup; index: 
   const keyTaken = group.quests.some((q, i) => i !== index && q.key === quest.key);
   const durationBad =
     quest.duration !== "" && !DURATION.test(quest.duration.replace(/\s/g, "").toLowerCase());
-  const kept = Object.keys(quest.rest).filter((k) => k !== "actions");
+  const kept = Object.keys(quest.rest).filter((k) => k !== "actions" && k !== "giver");
+  const giver = (
+    quest.rest.giver && typeof quest.rest.giver === "object" ? quest.rest.giver : {}
+  ) as Raw;
+  const setGiver = (field: "npc" | "conversation", value: string) =>
+    editQuest((q) => {
+      const next = { ...giver };
+      setOrDelete(next, field, value.trim());
+      if (typeof next.npc === "string" && next.npc !== "") q.rest.giver = next;
+      else delete q.rest.giver;
+    });
+  const giverSet = typeof giver.npc === "string" && giver.npc !== "";
+  const distributed = givesAlone(group.distribution);
 
   return (
     <>
@@ -796,6 +814,25 @@ function QuestView({ ctx, group, index }: { ctx: Ctx; group: QuestGroup; index: 
             />
           </Field>
         </div>
+        <div className="aq-row aq-top">
+          <Field label={t("giverNpc")} hint={<span className="aq-hint">{t("giverNpcHint")}</span>}>
+            <input
+              className="input aq-mono"
+              value={typeof giver.npc === "string" ? giver.npc : ""}
+              onChange={(e) => setGiver("npc", e.target.value)}
+            />
+          </Field>
+          {giverSet && (
+            <Field label={t("giverConversation")}>
+              <input
+                className="input aq-mono"
+                value={typeof giver.conversation === "string" ? giver.conversation : ""}
+                onChange={(e) => setGiver("conversation", e.target.value)}
+              />
+            </Field>
+          )}
+        </div>
+        {giverSet && distributed && <span className="aq-warn">{t("giverDistributed")}</span>}
         <details className="aq-fold" open={keyTaken || undefined}>
           <summary>{t("more")}</summary>
           <Field
