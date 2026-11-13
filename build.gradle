@@ -4,9 +4,11 @@ plugins {
 }
 
 allprojects {
-    group = 'com.github.ibanetchep.msquests'
-    // CI passes -PpluginVersion=<tag without v> for releases.
-    version = findProperty('pluginVersion') ?: '1.0-SNAPSHOT'
+    // Published to repo.artisanmc.net as net.artisanmc:artisan-quests (the plugin's plain jar),
+    // artisan-quests-core and artisan-quests-database: snapshots from artisanquests, releases from a tag
+    // v<version>, which sets the version with -PpluginVersion (.github/workflows/release.yml).
+    group = 'net.artisanmc'
+    version = findProperty('pluginVersion') ?: '1.0.0-SNAPSHOT'
 
     repositories {
         mavenCentral()
@@ -30,14 +32,42 @@ allprojects {
 
 subprojects {
     apply plugin: 'java'
-    // Published so integration plugins (e.g. MSGuildQuests) can compile against MSQuests:
-    //   ./gradlew publishToMavenLocal
+    // Published so integration plugins (e.g. ArtisanGuildQuests) can compile against ArtisanQuests.
+    // Locally: ./gradlew publishToMavenLocal
     apply plugin: 'maven-publish'
 
+    java {
+        withSourcesJar()
+    }
+
+    def publishedId = project.name == 'bukkit' ? 'artisan-quests' : "artisan-quests-${project.name}"
     publishing {
         publications {
             maven(MavenPublication) {
+                artifactId = publishedId
                 from components.java
+                pom {
+                    name = project.name == 'bukkit' ? 'ArtisanQuests' : "ArtisanQuests ${project.name}"
+                    description = project.name == 'bukkit'
+                            ? 'Quests for Paper, an Artisan add-on (formerly MSQuests): the plugin, without its shaded libraries.'
+                            : "Quests for Paper, an Artisan add-on (formerly MSQuests): the ${project.name} module."
+                    url = 'https://github.com/artisanmc/artisan-quests'
+                    scm {
+                        url = 'https://github.com/artisanmc/artisan-quests'
+                        connection = 'scm:git:https://github.com/artisanmc/artisan-quests.git'
+                    }
+                }
+            }
+        }
+        repositories {
+            maven {
+                name = 'artisanRepo'
+                def channel = version.toString().endsWith('SNAPSHOT') ? 'snapshots' : 'releases'
+                url = uri("https://repo.artisanmc.net/${channel}")
+                credentials {
+                    username = providers.gradleProperty('artisanRepoUsername').orNull
+                    password = providers.gradleProperty('artisanRepoPassword').orNull
+                }
             }
         }
     }

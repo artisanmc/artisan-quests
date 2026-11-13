@@ -685,10 +685,23 @@ conditions are Artisan's.
 
 ## CI and releases
 
-`.github/workflows/build.yml` builds and tests on every push to `master` and on every PR, and
-uploads the JAR as a run artifact. A `vX.Y.Z` tag creates a GitHub release with
-`artisanquests-X.Y.Z.jar` (version injected with `-PpluginVersion`, expanded into `plugin.yml`).
-A tag with a dash (`v1.2.0-beta.1`) gives a pre-release.
+`.github/workflows/build.yml` builds and tests every PR and uploads the JAR as a run artifact.
+
+`.github/workflows/release.yml` publishes to `repo.artisanmc.net`, like the Artisan API and the
+other add-ons, under the group `net.artisanmc`: `artisan-quests` (the `bukkit` module's plain jar,
+without the shaded libraries), `artisan-quests-core` and `artisan-quests-database`, each with its
+sources and POM. Credentials: the secrets `ARTISAN_REPO_USERNAME` and `ARTISAN_REPO_PASSWORD`.
+
+- Each push to `artisanquests` (the line in development) publishes the version of `build.gradle`,
+  a `-SNAPSHOT`, to `/snapshots`.
+- An annotated tag `vX.Y.Z` (`git tag -a v1.0.0 -m "<notes>"`) builds version `X.Y.Z` (injected
+  with `-PpluginVersion`, expanded into `paper-plugin.yml`), publishes it to `/releases` and
+  attaches `artisanquests-X.Y.Z.jar` to a **draft** GitHub release whose notes are the tag's
+  message. Check the draft, then publish it by hand.
+
+An integration plugin (e.g. ArtisanGuildQuests) compiles against
+`net.artisanmc:artisan-quests-core` and `net.artisanmc:artisan-quests` (non-transitive), from
+`https://repo.artisanmc.net/snapshots` or `/releases`.
 
 `artisan-core-api` (version `artisanApiVersion` in `gradle.properties`) comes from
 `https://repo.artisanmc.net/releases` (Artisan's Reposilite), without a token.

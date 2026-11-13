@@ -1,9 +1,7 @@
 name: Build
 
+# Pull requests only: pushes to artisanquests and tags v<version> build, test and publish in release.yml.
 on:
-  push:
-    branches: [master]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -27,19 +25,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Tags v1.2.3 build version 1.2.3; everything else stays a snapshot.
+      # The version of build.gradle (a -SNAPSHOT).
       - name: Resolve version
         id: version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=1.0-SNAPSHOT" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "value=$(bash ./gradlew properties -q --no-daemon | awk '/^version:/ {print $2}')" >> "$GITHUB_OUTPUT"
 
       # Repository tests use Testcontainers (MySQL); the runner provides Docker.
       - name: Build and test
-        run: bash ./gradlew --no-daemon build -PpluginVersion=${{ steps.version.outputs.value }}
+        run: bash ./gradlew --no-daemon build
 
       - name: Upload test reports
         if: failure()
@@ -52,21 +45,3 @@ jobs:
         with:
           name: artisanquests-${{ steps.version.outputs.value }}
           path: bukkit/build/libs/artisanquests-*.jar
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: artisanquests-*
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: artisanquests-*.jar
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
