@@ -71,7 +71,7 @@
     ]
   },
   "expected": {
-    "msquests:groups": [
+    "quests:groups": [
       {
         "key": "daily",
         "name": "Daily quests",
@@ -82,7 +82,7 @@
         "rotatable": true
       }
     ],
-    "msquests:quests": [
+    "quests:quests": [
       {
         "id": "daily:miner",
         "group": "daily",

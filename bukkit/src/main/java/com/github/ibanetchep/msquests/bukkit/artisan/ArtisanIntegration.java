@@ -21,9 +21,10 @@ public final class ArtisanIntegration {
      * ({@code TextApi}, so it runs on Spigot), the example template ({@code TemplateRegistry}),
      * its messages served by {@code TranslationsApi}, item specs built and compared by
      * {@code ItemStackApi.matches}, {@code ConditionsApi} and the structured
-     * {@code ModuleActionsApi.run}, {@code DocumentKindRegistry}, editor bundles and Game events.
+     * {@code ModuleActionsApi.run}, {@code DocumentKindRegistry}, editor bundles and Game events (1.0.0); data source
+     * aliases, which keep the {@code msquests:*} names of the {@code quests:*} sources (1.2.0).
      */
-    public static final String MIN_API_VERSION = "1.0.0";
+    public static final String MIN_API_VERSION = "1.2.0";
 
     private final BukkitQuestsPlugin plugin;
     private final ArtisanAPI api;

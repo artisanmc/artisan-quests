@@ -70,18 +70,24 @@ import java.util.logging.Level;
  *       Absent → the viewer.</li>
  *   <li>{@code actor} — which actor's quests to read: {@code player} (default),
  *       {@code global}, or any other registered actor type.</li>
- *   <li>{@code group} — restrict to one quest group ({@code msquests:quests} and
- *       {@code msquests:active}).</li>
+ *   <li>{@code group} — restrict to one quest group ({@code quests:quests} and
+ *       {@code quests:active}).</li>
  * </ul>
  */
 public final class MsQuestsArtisanModule implements ArtisanModule {
 
-    static final String GROUPS = "msquests:groups";
-    static final String QUESTS = "msquests:quests";
-    static final String ACTIVE = "msquests:active";
+    static final String GROUPS = "quests:groups";
+    static final String QUESTS = "quests:quests";
+    static final String ACTIVE = "quests:active";
     static final String NPC = "quests:npc";
-    /** The same rows under the legacy prefix, which is to go with the other {@code msquests:*} sources. */
-    static final String NPC_LEGACY = "msquests:npc";
+
+    /**
+     * The name a source had under the legacy prefix, kept as its alias so a menu written with
+     * {@code msquests:*} still reads it. The alias is to be removed with the prefix.
+     */
+    static String legacy(String ref) {
+        return "msquests:" + ref.substring(ref.indexOf(':') + 1);
+    }
 
     static final String GROUP_DIR = "quest_groups";
     static final String GROUP_SCHEMA = "quest_group/v1";
@@ -152,9 +158,9 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("active_count", ModelFieldType.integer(), "Quests in progress for the actor"),
                         new DataSourceField("completed_count", ModelFieldType.integer(), null),
                         new DataSourceField("can_rotate", ModelFieldType.bool(), null),
-                        new DataSourceField("quests", ModelFieldType.list(ModelFieldType.string()), "Nested msquests:quests rows")),
+                        new DataSourceField("quests", ModelFieldType.list(ModelFieldType.string()), "Nested quests:quests rows")),
                 Stability.STATIC,
-                "key"));
+                "key").withAliases(legacy(GROUPS)));
 
         api.getDataSources().register(new DataSourceDeclaration(
                 QUESTS,
@@ -188,7 +194,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                                 "Configured tree: key, name, flow, index, completed, active, "
                                         + "progress_ratio, objectives[] — player progress laid over it")),
                 Stability.STATIC,
-                "id"));
+                "id").withAliases(legacy(QUESTS)));
 
         // DYNAMIC: runtime instances, per actor and per period — pagination only.
         api.getDataSources().register(new DataSourceDeclaration(
@@ -212,15 +218,15 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("stage_flow", ModelFieldType.string(), "PARALLEL / SEQUENTIAL"),
                         new DataSourceField("progress_ratio", ModelFieldType.number(), "0..1"),
                         new DataSourceField("objectives", ModelFieldType.list(ModelFieldType.string()), "Flattened across stages"),
-                        new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()), "Same tree as msquests:quests"),
+                        new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()), "Same tree as quests:quests"),
                         new DataSourceField("expires_at", ModelFieldType.integer(), "Epoch millis, or 0")),
                 Stability.DYNAMIC,
-                null));
+                null).withAliases(legacy(ACTIVE)));
 
         // DYNAMIC: what the quests expect from NPCs for one player, read by an NPC module.
         QuestNpcs npcs = new QuestNpcs(plugin);
-        for (String ref : List.of(NPC, NPC_LEGACY)) api.getDataSources().register(new DataSourceDeclaration(
-                ref,
+        api.getDataSources().register(new DataSourceDeclaration(
+                NPC,
                 (player, params) -> npcRows(npcs, player, params),
                 List.of(
                         new DataSourceField("id", ModelFieldType.string(), "group:quest[:objective]"),
@@ -240,7 +246,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("progress", ModelFieldType.integer(), null),
                         new DataSourceField("target", ModelFieldType.integer(), null)),
                 Stability.DYNAMIC,
-                null));
+                null).withAliases(legacy(NPC)));
 
         api.getCommands().register(new CommandDeclaration("msquests:track",
                 (player, args) -> track(player, argv(args))));
@@ -347,7 +353,6 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         api.getEvents().publish(new DataReloadEvent(QUESTS));
         api.getEvents().publish(new DataReloadEvent(ACTIVE));
         api.getEvents().publish(new DataReloadEvent(NPC));
-        api.getEvents().publish(new DataReloadEvent(NPC_LEGACY));
     }
 
     // --------------------------------------------------------------- fetchers
@@ -410,7 +415,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                     // Named but unresolved: online-only, and worth saying so rather
                     // than returning an empty list the caller has to interpret.
                     ? "player '" + string(params.get("player")) + "' is not online"
-                    : "msquests:active needs a player — pass the `player` parameter to preview it");
+                    : "quests:active needs a player — pass the `player` parameter to preview it");
         }
 
         String groupFilter = string(params.get("group"));
@@ -503,8 +508,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     }
 
     /**
-     * Accepts either an instance id (the {@code id} of an {@code msquests:active} row) or a
-     * {@code group:key} config ref (the {@code id} of an {@code msquests:quests} row), and
+     * Accepts either an instance id (the {@code id} of an {@code quests:active} row) or a
+     * {@code group:key} config ref (the {@code id} of an {@code quests:quests} row), and
      * looks it up across every actor the player belongs to — so a guild quest resolves the
      * same way a personal one does.
      */

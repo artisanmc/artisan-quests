@@ -42,10 +42,11 @@ The plugin is called `ArtisanQuests` (`name:` in `plugin.yml`). The code keeps t
 | Permissions | `artisanquests.player`, `.rotate`, `.admin` | `msquests.player`, `.rotate`, `.admin`, `msquests.*`: declared in `plugin.yml` with the new node as a child, so a LuckPerms group that grants them keeps its rights |
 | Jar | `artisanquests-<version>.jar` | |
 
-Unchanged on purpose: the Artisan module id and Presence `msquests`, its data sources
-`msquests:groups`, `:quests`, `:active` and commands `msquests:track`, `:rotate`, `:contribute`
-(menus and chains on servers reference them), the `%msquests_*%` PAPI alias, the zMenu button
+Unchanged on purpose: the Artisan module id and Presence `msquests`, its commands
+`msquests:track`, `:rotate`, `:contribute` (menus and chains on servers reference them), the `%msquests_*%` PAPI alias, the zMenu button
 type `MSQUESTS_QUEST_GROUP` and the `msquests_*` tables (a table name is never visible).
+The data sources are named `quests:*`; each keeps its `msquests:*` name as an alias (Artisan
+API 1.2.0), there for menus written before the rename and due to be removed.
 
 Both jars must not sit in `plugins/` together: `provides: [MSQuests]` would clash with the old
 plugin.
@@ -262,20 +263,21 @@ Placeholders: `QuestPlaceholders` is registered in Artisan's `PlaceholderRegistr
 (namespace `quests`, exposed to PAPI); `%msquests_*%` stays as a PAPI alias (C7). New
 keys `status_<group>:<quest>` and `completed_<group>:<quest>`.
 
-The data sources and commands below remain (`msquests:*` alias, C7):
+The data sources and commands below remain. A source is named `quests:*` and still answers to
+its former `msquests:*` name, an alias the editor does not list (C7):
 
 | Data source | Stability | Content |
 |---|---|---|
-| `msquests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
-| `msquests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
-| `msquests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
-| `quests:npc` (alias `msquests:npc`) | DYNAMIC | What the quests expect from NPCs for the player (see *Quests and NPCs*) |
+| `quests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
+| `quests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
+| `quests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
+| `quests:npc` | DYNAMIC | What the quests expect from NPCs for the player (see *Quests and NPCs*) |
 
 Three parameters, common to the three sources:
 
 - `player` — target a player other than the one opening the menu (by name, must be online)
 - `actor` — which actor to read: `player` (default), `global`, or any other registered type
-- `group` — restrict to one group (`msquests:quests`, `msquests:active`)
+- `group` — restrict to one group (`quests:quests`, `quests:active`)
 
 `ActorResolver` (in `core/registry/`) resolves (player, actor type) via
 `QuestActor#isMember`, never by identity: a future guild actor works without
@@ -287,7 +289,7 @@ attempt at this quest" (active instance, otherwise the most recent non-expired o
 period). It is the question every display surface asks; it is
 resolved once, in the domain.
 
-**Catalog = config + progress laid over it.** `msquests:quests` is keyed on the
+**Catalog = config + progress laid over it.** `quests:quests` is keyed on the
 **configs**, not on the instances: all the quests of a group appear, started
 or not, and the player's state is laid over them. A quest never started therefore still
 exposes its stages, its objectives (with their target) and its rewards, at zero
@@ -303,7 +305,7 @@ menu previews the draft before any deploy. The definition fields (titles, limits
 objectives and their targets) come from the draft; the player's fields (status, progress,
 counters, `period_end`) from the server's rows, matched by key (`ctx.serverRows`, Artisan editor
 SDK 1.12). A quest the draft adds shows the neutral state, one it removes disappears; an
-instance of `msquests:active` whose quest is gone from the draft is dropped. Of an attempt, only
+instance of `quests:active` whose quest is gone from the draft is dropped. Of an attempt, only
 what the server stores is taken (each objective's progress and COMPLETED/FAILED status, by
 objective key): completion, ratios, the current stage and objective are derived again over the
 draft with the domain's rules, so a lowered target or a removed stage previews as the server will
@@ -311,7 +313,7 @@ show it after the deploy. An objective keeps
 the server's name while its type and target are unchanged, otherwise it is named from the
 default `objective.<type>` texts (an admin's own wording in `lang/` shows after a deploy). The
 `group` parameter narrows the rows like the fetcher (`ctx.params`). An older editor passes no
-context: groups and quests show the draft at neutral state, `msquests:active` the server.
+context: groups and quests show the draft at neutral state, `quests:active` the server.
 `testdata/sources/*.json` pins the definition fields both sides must produce, and stored
 attempts laid over the document:
 `QuestSourceVectorsTest` (plugin) and `sourceRows.test.ts` (editor) read the same files.
@@ -525,7 +527,7 @@ click does. Three places name an NPC, all in the quest:
 - a `deliver_item` objective with `npc`, `conversation?` and `missing?` (the conversation played
   while the player does not carry the whole amount). Without `npc` it stays delivered from a menu.
 
-`quests:npc` (`QuestNpcs`, also registered as `msquests:npc`; parameters `npc?` and `player?`) answers for one player, in the order
+`quests:npc` (`QuestNpcs`, alias `msquests:npc`; parameters `npc?` and `player?`) answers for one player, in the order
 an NPC should consider them: the objectives in progress bound to an NPC (`kind: objective`, oldest
 quest first, objective conditions applied), then the quests a giver may start now (`kind: offer`,
 `canStartQuest`). Each row carries `npc`, `group`, `quest`, `objective`, `objective_type`, `ready`

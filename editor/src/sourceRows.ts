@@ -13,15 +13,20 @@ import { itemLabel, itemValue, objectiveSpec, objectiveTarget } from "./objectiv
  * (`instanceFields`). A quest the
  * draft adds gets the neutral state the server gives a quest nobody started; a quest it
  * removes disappears. An older editor passes no `ctx`: groups and quests then show the
- * draft with that neutral state, and `msquests:active` keeps the server's rows.
+ * draft with that neutral state, and `quests:active` keeps the server's rows.
  *
  * Row shapes mirror `QuestRows` in the plugin; `sourceRows.test.ts` and `QuestSourceVectorsTest`
  * read the same vectors (`testdata/sources/`), so the two cannot drift apart unnoticed.
  */
 
-export const GROUPS = "msquests:groups";
-export const QUESTS = "msquests:quests";
-export const ACTIVE = "msquests:active";
+export const GROUPS = "quests:groups";
+export const QUESTS = "quests:quests";
+export const ACTIVE = "quests:active";
+
+/** A menu written before the rename names a source `msquests:*`, the alias the plugin keeps. */
+function canonical(ref: string): string {
+  return ref.startsWith("msquests:") ? `quests:${ref.slice("msquests:".length)}` : ref;
+}
 
 export interface PreviewContext {
   serverRows?: Record<string, unknown>[];
@@ -68,7 +73,8 @@ const OBJECTIVE_NAMES: Record<string, Record<string, string>> = {
 /** `zmenu.quest.status.available`: the status a quest nobody started shows. */
 const AVAILABLE: Record<string, string> = { en: "Available", fr: "Disponible" };
 
-export function questsLocalRows(project: unknown, ref: string, ctx?: PreviewContext): Row[] | null {
+export function questsLocalRows(project: unknown, named: string, ctx?: PreviewContext): Row[] | null {
+  const ref = canonical(named);
   if (ref !== GROUPS && ref !== QUESTS && ref !== ACTIVE) return null;
   const groups = (project as ProjectLike).documents?.[KIND] as QuestGroup[] | undefined;
   // No quest group in this project: another project may hold them, or the server alone.
