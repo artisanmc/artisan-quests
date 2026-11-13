@@ -2129,6 +2129,9 @@ function Vt(e, t, i) {
     stage_name: n.stage_name,
     stage_flow: n.stage_flow,
     progress_ratio: n.progress_ratio,
+    objective_name: n.objective_name,
+    objective_progress: n.objective_progress,
+    objective_target: n.objective_target,
     objectives: a.flatMap((r) => r.objectives),
     stages: a
   };

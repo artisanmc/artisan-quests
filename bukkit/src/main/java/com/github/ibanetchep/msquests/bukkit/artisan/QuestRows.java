@@ -222,6 +222,11 @@ public final class QuestRows {
         row.put("stage_name", stage != null ? nullToEmpty(stage.getName()) : "");
         row.put("stage_flow", stage != null ? stage.getStageConfig().getFlow().name() : "");
         row.put("progress_ratio", quest.getProgressRatio());
+        // What to do next, as in the catalog row: a journal names it without walking the tree.
+        QuestObjective current = stage != null ? quest.getFirstActiveObjective() : null;
+        row.put("objective_name", current != null ? translator.getRaw(current.getObjectiveConfig()) : "");
+        row.put("objective_progress", current != null ? current.getProgress() : 0);
+        row.put("objective_target", current != null ? current.getTarget() : 0);
 
         List<Map<String, Object>> objectives = new ArrayList<>();
         for (QuestObjective objective : quest.getObjectives()) {

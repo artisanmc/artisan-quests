@@ -31,6 +31,7 @@ import net.artisanmc.modules.api.datasource.Stability;
 import net.artisanmc.modules.api.document.DocumentKindDeclaration;
 import net.artisanmc.modules.api.editor.EditorBundleDeclaration;
 import net.artisanmc.modules.api.gameevent.GameEventDeclaration;
+import net.artisanmc.modules.api.playercommand.PlayerCommandDeclaration;
 import net.artisanmc.modules.api.template.TemplateDeclaration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -102,6 +103,23 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     static final String TEMPLATE_ROOT = "artisan-templates/daily";
     static final List<String> TEMPLATE_FILES = List.of("quest_groups/example_daily.yaml");
 
+    /**
+     * The module's own menus, kept by Artisan in its folder ({@code TemplateDeclaration.system()}):
+     * untouched they follow each version, edited they stay the admin's. Raise
+     * {@link #SYSTEM_VERSION} whenever one of the files changes.
+     */
+    static final String SYSTEM_TEMPLATE = "quests_files";
+    static final int SYSTEM_VERSION = 1;
+    static final String SYSTEM_ROOT = "artisan-templates/system";
+    static final List<String> SYSTEM_FILES = List.of("menus/journal.yaml");
+
+    /** {@code /quests}: what the command file's {@code module_command} names; never changes. */
+    static final String JOURNAL_COMMAND = "msquests:journal";
+    /** Granted to everyone ({@code plugin.yml}): reading one's own quests is not an admin matter. */
+    static final String JOURNAL_PERMISSION = "artisanquests.journal";
+    /** The system menu {@code /quests} opens, in the module's folder. */
+    static final String JOURNAL_MENU = EditorProject.PROJECT_ID + ":journal";
+
     private final BukkitQuestsPlugin plugin;
     private final ActorResolver actors;
     private @Nullable ArtisanAPI api;
@@ -129,6 +147,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                 QuestActions.GROUP_KIND, GROUP_DIR, List.of(GROUP_SCHEMA), null));
         registerFolder(api);
         registerTemplate(api);
+        registerJournal(api);
         registerEditorBundle(api);
 
         QuestActions actions = new QuestActions(plugin);
@@ -217,6 +236,9 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("stage_name", ModelFieldType.string(), null),
                         new DataSourceField("stage_flow", ModelFieldType.string(), "PARALLEL / SEQUENTIAL"),
                         new DataSourceField("progress_ratio", ModelFieldType.number(), "0..1"),
+                        new DataSourceField("objective_name", ModelFieldType.string(), "Current objective"),
+                        new DataSourceField("objective_progress", ModelFieldType.integer(), null),
+                        new DataSourceField("objective_target", ModelFieldType.integer(), null),
                         new DataSourceField("objectives", ModelFieldType.list(ModelFieldType.string()), "Flattened across stages"),
                         new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()), "Same tree as quests:quests"),
                         new DataSourceField("expires_at", ModelFieldType.integer(), "Epoch millis, or 0")),
@@ -283,6 +305,36 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         } catch (IllegalArgumentException | IllegalStateException e) {
             plugin.getLogger().log(Level.WARNING, "The example quests are not available", e);
         }
+    }
+
+    /**
+     * The quest journal: a menu of the quests in progress, shipped as a system file the admin
+     * edits in the editor, and {@code /quests}, which opens it. Artisan writes the command as
+     * {@code commands/quests.yml} of the module's folder: its name, aliases and permission are
+     * changed there. A failure leaves the quests running without the journal.
+     */
+    private void registerJournal(ArtisanAPI api) {
+        try {
+            api.getTemplates().register(TemplateDeclaration
+                    .fromResources(getClass().getClassLoader(), SYSTEM_ROOT, SYSTEM_TEMPLATE, SYSTEM_VERSION, SYSTEM_FILES)
+                    .title("Quests")
+                    .system()
+                    .build());
+            api.getPlayerCommands().register(journalCommand());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            plugin.getLogger().log(Level.WARNING, "The quest journal is not available", e);
+        }
+    }
+
+    static PlayerCommandDeclaration journalCommand() {
+        return PlayerCommandDeclaration.builder(JOURNAL_COMMAND)
+                .name("quests")
+                .permission(JOURNAL_PERMISSION)
+                .description(Map.of(
+                        "en", "Your quests in progress",
+                        "fr", "Tes quêtes en cours"))
+                .opensMenu(JOURNAL_MENU)
+                .build();
     }
 
     /** Hands the editor view to Artisan, which serves it to the editor. */

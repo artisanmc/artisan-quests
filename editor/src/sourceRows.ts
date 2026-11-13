@@ -270,6 +270,9 @@ function activeRow(quest: Quest, server: Row, lang: string): Row {
     stage_name: fields.stage_name,
     stage_flow: fields.stage_flow,
     progress_ratio: fields.progress_ratio,
+    objective_name: fields.objective_name,
+    objective_progress: fields.objective_progress,
+    objective_target: fields.objective_target,
     objectives: stages.flatMap((s) => s.objectives as Row[]),
     stages,
   };

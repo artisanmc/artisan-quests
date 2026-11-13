@@ -1,0 +1,58 @@
+schema: menu/v1
+# /quests: the quests the player has in progress, the one they follow glowing. A click follows a
+# quest or stops following it. Rows come from quests:active: name, stage, current objective.
+title:
+  - kind: plain
+    value: { en: "<dark_gray>Quest journal", fr: "<dark_gray>Journal de quêtes" }
+size: 54
+inputs:
+  - name: active
+    type: list
+    source: { ref: "quests:active" }
+elements:
+  - id: border
+    positions: "0-3,5-8,9,17,18,26,27,35,36,44,45-48,50-53"
+    material: GRAY_STAINED_GLASS_PANE
+    title: " "
+  - id: summary
+    positions: 4
+    material: WRITABLE_BOOK
+    title: { en: "<gold>Quests in progress: <white>{active.length()}", fr: "<gold>Quêtes en cours : <white>{active.length()}" }
+    lore:
+      - { en: "{active.length() ? \"<gray>Click a quest to follow it.\" : \"<gray>You have no quest in progress.\"}", fr: "{active.length() ? \"<gray>Clique sur une quête pour la suivre.\" : \"<gray>Tu n'as aucune quête en cours.\"}" }
+  - id: quests
+    positions: "10-16,19-25,28-34,37-43"
+    iterates: { source: active, alias: q }
+    states:
+      - if:
+          - expression: q.tracked
+        material: BOOK
+        enchanted: true
+        title: "<gold>{q.name}"
+        lore:
+          - "<gray>{q.description}"
+          - ""
+          - { en: "<gray>Stage <white>{q.stage_index + 1}</white> of <white>{q.stage_count}</white>", fr: "<gray>Étape <white>{q.stage_index + 1}</white> sur <white>{q.stage_count}</white>" }
+          - { en: "<yellow>{q.objective_name} <gray>{q.objective_progress}/{q.objective_target}", fr: "<yellow>{q.objective_name} <gray>{q.objective_progress}/{q.objective_target}" }
+          - ""
+          - { en: "<green>✔ Followed <dark_gray>· click to stop", fr: "<green>✔ Suivie <dark_gray>· clic pour arrêter" }
+        click:
+          left:
+            - quests:track: { group: "{q.group}", quest: "{q.quest_key}" }
+    material: BOOK
+    title: "<yellow>{q.name}"
+    lore:
+      - "<gray>{q.description}"
+      - ""
+      - { en: "<gray>Stage <white>{q.stage_index + 1}</white> of <white>{q.stage_count}</white>", fr: "<gray>Étape <white>{q.stage_index + 1}</white> sur <white>{q.stage_count}</white>" }
+      - { en: "<yellow>{q.objective_name} <gray>{q.objective_progress}/{q.objective_target}", fr: "<yellow>{q.objective_name} <gray>{q.objective_progress}/{q.objective_target}" }
+      - ""
+      - { en: "<gray>Click to follow", fr: "<gray>Clic pour suivre" }
+    click:
+      left:
+        - quests:track: { group: "{q.group}", quest: "{q.quest_key}" }
+  - id: close
+    positions: 49
+    material: BARRIER
+    title: { en: "<red>Close", fr: "<red>Fermer" }
+    click: { left: [ close_menu ] }
