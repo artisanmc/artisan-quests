@@ -28,7 +28,7 @@ import java.util.UUID;
  * What the quests expect from NPCs, for one player: the objectives in progress that name an NPC
  * ({@code talk_npc}, a {@code deliver_item} with an {@code npc}) and the quests an NPC gives
  * ({@code giver}) that the player may start now. The quests only say it: an NPC module reads
- * {@code msquests:npc}, decides what the click does and validates with {@code quests:advance}.
+ * {@code quests:npc}, decides what the click does and validates with {@code quests:advance}.
  *
  * <p>Rows keep one shape and are never null-valued, like {@link QuestRows}. Objectives come
  * first, oldest quest first, then the offers in group and quest order: finishing what was

@@ -79,7 +79,9 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     static final String GROUPS = "msquests:groups";
     static final String QUESTS = "msquests:quests";
     static final String ACTIVE = "msquests:active";
-    static final String NPC = "msquests:npc";
+    static final String NPC = "quests:npc";
+    /** The same rows under the legacy prefix, which is to go with the other {@code msquests:*} sources. */
+    static final String NPC_LEGACY = "msquests:npc";
 
     static final String GROUP_DIR = "quest_groups";
     static final String GROUP_SCHEMA = "quest_group/v1";
@@ -217,8 +219,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
         // DYNAMIC: what the quests expect from NPCs for one player, read by an NPC module.
         QuestNpcs npcs = new QuestNpcs(plugin);
-        api.getDataSources().register(new DataSourceDeclaration(
-                NPC,
+        for (String ref : List.of(NPC, NPC_LEGACY)) api.getDataSources().register(new DataSourceDeclaration(
+                ref,
                 (player, params) -> npcRows(npcs, player, params),
                 List.of(
                         new DataSourceField("id", ModelFieldType.string(), "group:quest[:objective]"),
@@ -345,6 +347,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         api.getEvents().publish(new DataReloadEvent(QUESTS));
         api.getEvents().publish(new DataReloadEvent(ACTIVE));
         api.getEvents().publish(new DataReloadEvent(NPC));
+        api.getEvents().publish(new DataReloadEvent(NPC_LEGACY));
     }
 
     // --------------------------------------------------------------- fetchers

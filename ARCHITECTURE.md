@@ -269,7 +269,7 @@ The data sources and commands below remain (`msquests:*` alias, C7):
 | `msquests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
 | `msquests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
 | `msquests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
-| `msquests:npc` | DYNAMIC | What the quests expect from NPCs for the player (see *Quests and NPCs*) |
+| `quests:npc` (alias `msquests:npc`) | DYNAMIC | What the quests expect from NPCs for the player (see *Quests and NPCs*) |
 
 Three parameters, common to the three sources:
 
@@ -525,7 +525,7 @@ click does. Three places name an NPC, all in the quest:
 - a `deliver_item` objective with `npc`, `conversation?` and `missing?` (the conversation played
   while the player does not carry the whole amount). Without `npc` it stays delivered from a menu.
 
-`msquests:npc` (`QuestNpcs`, parameters `npc?` and `player?`) answers for one player, in the order
+`quests:npc` (`QuestNpcs`, also registered as `msquests:npc`; parameters `npc?` and `player?`) answers for one player, in the order
 an NPC should consider them: the objectives in progress bound to an NPC (`kind: objective`, oldest
 quest first, objective conditions applied), then the quests a giver may start now (`kind: offer`,
 `canStartQuest`). Each row carries `npc`, `group`, `quest`, `objective`, `objective_type`, `ready`
