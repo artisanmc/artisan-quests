@@ -13,10 +13,11 @@ public class QuestStageConfig {
     private Flow flow;
     private final Map<String, QuestObjectiveConfig> objectives;
 
-    public QuestStageConfig(String key, @Nullable String name, Flow flow) {
+    /** @param flow how the objectives are done; none given: all at once ({@link Flow#PARALLEL}) */
+    public QuestStageConfig(String key, @Nullable String name, @Nullable Flow flow) {
         this.key = key;
         this.name = name;
-        this.flow = flow;
+        this.flow = flow != null ? flow : Flow.PARALLEL;
         this.objectives = new LinkedHashMap<>();
     }
 
@@ -45,6 +46,6 @@ public class QuestStageConfig {
     }
 
     public void setObjectiveCompletionType(Flow flow) {
-        this.flow = flow;
+        this.flow = flow != null ? flow : Flow.PARALLEL;
     }
 }

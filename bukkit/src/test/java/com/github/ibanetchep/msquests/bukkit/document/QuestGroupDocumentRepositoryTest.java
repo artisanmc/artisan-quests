@@ -111,6 +111,19 @@ class QuestGroupDocumentRepositoryTest {
         assertEquals("Quotidiennes", load().groups().get("daily").name());
     }
 
+    /** A stage without {@code flow} used to reach the data sources with a null flow, which they could not print. */
+    @Test
+    void aStageWithoutFlowRunsItsObjectivesInParallel() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"),
+                group("G1", "Q1", "").replace("        flow: sequential\n", ""));
+
+        var stage = load().groups().get("daily").quests().getFirst().stages().getFirst();
+
+        assertNull(stage.flow(), "the Document says nothing");
+        assertEquals(com.github.ibanetchep.msquests.core.quest.objective.Flow.PARALLEL,
+                new com.github.ibanetchep.msquests.core.quest.config.QuestStageConfig(stage.key(), stage.name(), stage.flow()).getFlow());
+    }
+
     @Test
     void readsTheNpcThatGivesAQuest() throws Exception {
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
