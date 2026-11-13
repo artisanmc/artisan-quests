@@ -55,6 +55,31 @@ class DeliverItemObjectiveTest extends AbstractObjectiveHandlerTest {
     }
 
     @Test
+    void canCompleteOnlyWithTheWholeMissingAmount() {
+        player.getInventory().addItem(new ItemStack(Material.STONE, 9));
+        DeliverItemObjective objective = objective(10, 0);
+
+        assertEquals(9, objective.available(player));
+        org.junit.jupiter.api.Assertions.assertFalse(objective.canComplete(player));
+        assertEquals(9, count(Material.STONE));
+
+        player.getInventory().addItem(new ItemStack(Material.STONE, 1));
+        org.junit.jupiter.api.Assertions.assertTrue(objective.canComplete(player));
+        org.junit.jupiter.api.Assertions.assertTrue(objective(15, 5).canComplete(player));
+    }
+
+    @Test
+    void readsTheNpcAndItsConversations() {
+        DeliverItemObjectiveConfig config = objective(Map.of("material", "STONE", "amount", 10,
+                "npc", "bruno", "conversation", "bruno_thanks", "missing", "bruno_waits"), 0).getObjectiveConfig();
+
+        assertEquals("bruno", config.getNpc());
+        assertEquals("bruno_thanks", config.getConversation());
+        assertEquals("bruno_waits", config.getMissingConversation());
+        assertEquals("bruno", config.toDTO().params().get("npc"));
+    }
+
+    @Test
     void takesOnlyTheItemsMatchingTheSpec() {
         ItemStack named = new ItemStack(Material.STONE, 5);
         named.editMeta(meta -> meta.displayName(net.kyori.adventure.text.Component.text("Pierre bénie")));

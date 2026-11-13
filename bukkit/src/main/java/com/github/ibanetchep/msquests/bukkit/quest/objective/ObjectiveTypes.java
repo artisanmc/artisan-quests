@@ -12,6 +12,7 @@ public final class ObjectiveTypes {
     public static final String FISHING = "fishing";
     public static final String PLACEHOLDER = "placeholder";
     public static final String TRAVEL = "travel";
+    public static final String TALK_NPC = "talk_npc";
 
     private ObjectiveTypes() {}
 }

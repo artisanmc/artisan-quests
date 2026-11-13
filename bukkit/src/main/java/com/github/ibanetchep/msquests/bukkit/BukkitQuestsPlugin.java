@@ -35,6 +35,9 @@ import com.github.ibanetchep.msquests.bukkit.quest.objective.blockbreak.BlockBre
 import com.github.ibanetchep.msquests.bukkit.quest.objective.deliveritem.DeliverItemObjective;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.deliveritem.DeliverItemObjectiveConfig;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.deliveritem.DeliverItemObjectiveHandler;
+import com.github.ibanetchep.msquests.bukkit.quest.objective.talknpc.TalkNpcObjective;
+import com.github.ibanetchep.msquests.bukkit.quest.objective.talknpc.TalkNpcObjectiveConfig;
+import com.github.ibanetchep.msquests.bukkit.quest.objective.talknpc.TalkNpcObjectiveHandler;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.executecommand.ExecuteCommandObjective;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.executecommand.ExecuteCommandObjectiveConfig;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.executecommand.ExecuteCommandObjectiveHandler;
@@ -446,6 +449,7 @@ public class BukkitQuestsPlugin extends JavaPlugin implements MSQuestsPlatform {
         questObjectiveFactory.register(FishingObjectiveConfig.class, FishingObjective.class, new FishingObjectiveHandler(this));
         questObjectiveFactory.register(PlaceholderObjectiveConfig.class, PlaceholderObjective.class, new PlaceholderObjectiveHandler(this));
         questObjectiveFactory.register(TravelObjectiveConfig.class, TravelObjective.class, new TravelObjectiveHandler(this));
+        questObjectiveFactory.register(TalkNpcObjectiveConfig.class, TalkNpcObjective.class, new TalkNpcObjectiveHandler(this));
     }
 
     /**

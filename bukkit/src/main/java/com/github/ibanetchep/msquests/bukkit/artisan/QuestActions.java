@@ -53,6 +53,7 @@ final class QuestActions {
     static final String TRACK = "quests:track";
     static final String ROTATE = "quests:rotate";
     static final String COMPLETE = "quests:complete";
+    static final String ADVANCE = "quests:advance";
     static final String DISTRIBUTE = "quests:distribute";
     static final String ACTION_BAR = "quests:action_bar";
     static final String BOSS_BAR = "quests:boss_bar";
@@ -62,6 +63,7 @@ final class QuestActions {
     private final BukkitQuestsPlugin plugin;
     private final ActorResolver actors;
     private final QuestBossBars bossBars;
+    private final QuestNpcs npcs;
 
     QuestActions(BukkitQuestsPlugin plugin) {
         this(plugin, BossBars.BUKKIT);
@@ -71,6 +73,7 @@ final class QuestActions {
         this.plugin = plugin;
         this.actors = new ActorResolver(plugin.getQuestActorRegistry());
         this.bossBars = new QuestBossBars(plugin, bars);
+        this.npcs = new QuestNpcs(plugin);
     }
 
     List<ActionDeclaration> declarations() {
@@ -80,6 +83,13 @@ final class QuestActions {
                 new ActionDeclaration(TRACK, questArgs(), null, this::track),
                 new ActionDeclaration(ROTATE, questArgs(), null, this::rotate),
                 new ActionDeclaration(COMPLETE, questArgs(), null, this::complete),
+                new ActionDeclaration(ADVANCE, List.of(
+                        groupArg(),
+                        new ModelField("quest", ModelFieldType.string(), true)
+                                .withHelp("Quest key inside the group."),
+                        new ModelField("objective", ModelFieldType.string(), true)
+                                .withHelp("Key of an objective bound to an NPC: talk_npc, or deliver_item with an npc.")
+                ), null, this::advance),
                 new ActionDeclaration(DISTRIBUTE, List.of(
                         groupArg(),
                         new ModelField("amount", ModelFieldType.integer())
@@ -201,6 +211,23 @@ final class QuestActions {
         if (quest == null) return ctx;
 
         plugin.getQuestLifecycleService().completeQuest(quest);
+        return ctx;
+    }
+
+    /**
+     * Validates an objective bound to an NPC, for the actor's active instance of the quest: what
+     * an NPC module runs once the player clicked the NPC and its conversation confirmed. A
+     * {@code deliver_item} takes the whole missing amount from the player, or nothing.
+     */
+    private ActionContext advance(ActionContext ctx, Map<String, Object> args, ActionRuntime runtime) {
+        Quest quest = activeQuest(ADVANCE, ctx, args, runtime);
+        if (quest == null) return ctx;
+        String objective = blankToNull(runtime.text(ctx, args.get("objective")));
+        if (objective == null) {
+            runtime.warn(ADVANCE + ": no objective given");
+            return ctx;
+        }
+        npcs.advance(ctx.getPlayer(), quest, objective);
         return ctx;
     }
 

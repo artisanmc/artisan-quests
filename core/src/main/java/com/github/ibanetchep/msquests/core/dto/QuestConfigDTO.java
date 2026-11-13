@@ -1,5 +1,6 @@
 package com.github.ibanetchep.msquests.core.dto;
 
+import com.github.ibanetchep.msquests.core.quest.config.QuestGiver;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.jetbrains.annotations.Nullable;
 
@@ -20,18 +21,26 @@ public record QuestConfigDTO(
         // quest_group Documents only, see QuestGroupConfigDTO#uid.
         @JsonIgnore String uid,
         // quest_group Documents only: actions.start / objective_progress / objective_complete.
-        @JsonIgnore @Nullable QuestConfigHooksDTO hooks
+        @JsonIgnore @Nullable QuestConfigHooksDTO hooks,
+        // quest_group Documents only: the NPC that hands the quest out.
+        @JsonIgnore @Nullable QuestGiver giver
 ) {
+    public QuestConfigDTO(String key, String name, String description, Long duration, String tier,
+                          List<Object> rewards, List<QuestStageConfigDTO> stages,
+                          @Nullable List<Object> requirements, String uid, @Nullable QuestConfigHooksDTO hooks) {
+        this(key, name, description, duration, tier, rewards, stages, requirements, uid, hooks, null);
+    }
+
     public QuestConfigDTO(String key, String name, String description, Long duration, String tier,
                           List<Object> rewards,
                           List<QuestStageConfigDTO> stages, @Nullable List<Object> requirements) {
-        this(key, name, description, duration, tier, rewards, stages, requirements, null, null);
+        this(key, name, description, duration, tier, rewards, stages, requirements, null, null, null);
     }
 
     public QuestConfigDTO(String key, String name, String description, Long duration, String tier,
                           List<Object> rewards, List<QuestStageConfigDTO> stages,
                           @Nullable List<Object> requirements, String uid) {
-        this(key, name, description, duration, tier, rewards, stages, requirements, uid, null);
+        this(key, name, description, duration, tier, rewards, stages, requirements, uid, null, null);
     }
 
     /**

@@ -187,6 +187,7 @@ is registered and declares:
 | `quests:track` | `group`, `quest` | Tracks / untracks the active instance (like `msquests:track`) |
 | `quests:rotate` | `group`, `quest` | Swaps the active instance for another one of the group |
 | `quests:complete` | `group`, `quest` | Completes the active instance, rewards included |
+| `quests:advance` | `group`, `quest`, `objective` | Validates an objective bound to an NPC on the active instance: a `talk_npc` completes, a `deliver_item` with an `npc` takes the whole missing amount or nothing |
 | `quests:distribute` | `group` (primary), `amount?` | Distributes `amount` quests, otherwise applies the group's distribution |
 | `quests:action_bar` | `text` (primary, ltext) | Shows the text in the action bar (Artisan's core has none) |
 | `quests:boss_bar` | `text` (primary), `color`, `style`, `show_progress`, `duration` | Per-player boss bar, updated in place, hidden `duration` s after the last call; filled with the chain's `progress_ratio` |
@@ -268,6 +269,7 @@ The data sources and commands below remain (`msquests:*` alias, C7):
 | `msquests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
 | `msquests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
 | `msquests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
+| `msquests:npc` | DYNAMIC | What the quests expect from NPCs for the player (see *Quests and NPCs*) |
 
 Three parameters, common to the three sources:
 
@@ -507,10 +509,33 @@ Each objective type follows a 3-class pattern + registration:
 | `breed_animal` | `EntityBreedEvent` | entity type |
 | `deliver_item` | `msquests:contribute` (menu) | item (`item` + `match`, legacy `material`), amount — inventory then carried shulkers (`deliver_item.include_shulker_boxes` in config.yml) |
 | `harvest_crop` | `BlockBreakEvent` | crop type |
+| `talk_npc` | none: `quests:advance` (an NPC module) | `npc`, `conversation?` |
 
 An objective's **item** (`ItemTarget`) is an Artisan item spec: the fields of a menu button's appearance (`material`: vanilla, `item:<captured id>` or `nexo:<id>`…; `title`, `lore`, `enchants`, `custom_model_data`), built and compared by `api.getItems()`. `match` lists the criteria (`material`, `custom_item`, `name`, `lore`, `enchants`, `custom_model_data`, `damage`, `exact`); absent, those the item carries. A legacy bare material is compared on the material alone, and is rewritten as `item` + `match: [material]` on save. No item: any item.
 | `placeholder` | Polling scheduler | placeholder, interval, condition |
 | `travel` | `PlayerMoveEvent` | distance |
+
+### Quests and NPCs
+
+The quests hold no NPC: they name one by id, and an NPC module (`artisan-npcs`) decides what a
+click does. Three places name an NPC, all in the quest:
+
+- `giver: {npc, conversation?}` on a quest: the NPC that hands it out;
+- a `talk_npc` objective: `npc`, `conversation?`;
+- a `deliver_item` objective with `npc`, `conversation?` and `missing?` (the conversation played
+  while the player does not carry the whole amount). Without `npc` it stays delivered from a menu.
+
+`msquests:npc` (`QuestNpcs`, parameters `npc?` and `player?`) answers for one player, in the order
+an NPC should consider them: the objectives in progress bound to an NPC (`kind: objective`, oldest
+quest first, objective conditions applied), then the quests a giver may start now (`kind: offer`,
+`canStartQuest`). Each row carries `npc`, `group`, `quest`, `objective`, `objective_type`, `ready`
+(false for a delivery whose items are not all carried) and the `conversation` to play (`missing`
+when not ready, empty when none). The NPC module starts an offer with `quests:start` and validates
+an objective with `quests:advance`. A delivery to an NPC is all or nothing: the inventory is counted
+again at validation, nothing is taken while the amount is short.
+
+A quest with a giver in a group that also distributes automatically can be handed out by the draw
+before the player meets the NPC; the editor warns about it and the server allows it.
 
 ---
 

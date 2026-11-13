@@ -101,6 +101,7 @@ objective:
   deliver_item: 'Livrer %amount% × %material%'
   kill_entity: 'Tuer %amount% × %entity_type%'
   execute_command: 'Exécuter la commande %command%'
+  talk_npc: 'Parler à %npc%'
   fishing: 'Pêcher %amount% × %fish_type%'
   placeholder: 'Atteindre %value%'
   travel: 'Parcourir %distance% blocs'
