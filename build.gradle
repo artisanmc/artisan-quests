@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     // Published to repo.artisanmc.net as net.artisanmc:artisan-quests (the plugin's plain jar),
-    // artisan-quests-core and artisan-quests-database: snapshots from artisanquests, releases from a tag
+    // artisan-quests-core and artisan-quests-database: snapshots from master, releases from a tag
     // v<version>, which sets the version with -PpluginVersion (.github/workflows/release.yml).
     group = 'net.artisanmc'
     version = findProperty('pluginVersion') ?: '1.0.0-SNAPSHOT'

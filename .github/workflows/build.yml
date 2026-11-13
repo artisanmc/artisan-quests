@@ -1,6 +1,6 @@
 name: Build
 
-# Pull requests only: pushes to artisanquests and tags v<version> build, test and publish in release.yml.
+# Pull requests only: pushes to master and tags v<version> build, test and publish in release.yml.
 on:
   pull_request:
   workflow_dispatch:

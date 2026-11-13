@@ -692,7 +692,7 @@ other add-ons, under the group `net.artisanmc`: `artisan-quests` (the `bukkit` m
 without the shaded libraries), `artisan-quests-core` and `artisan-quests-database`, each with its
 sources and POM. Credentials: the secrets `ARTISAN_REPO_USERNAME` and `ARTISAN_REPO_PASSWORD`.
 
-- Each push to `artisanquests` (the line in development) publishes the version of `build.gradle`,
+- Each push to `master` publishes the version of `build.gradle`,
   a `-SNAPSHOT`, to `/snapshots`.
 - An annotated tag `vX.Y.Z` (`git tag -a v1.0.0 -m "<notes>"`) builds version `X.Y.Z` (injected
   with `-PpluginVersion`, expanded into `paper-plugin.yml`), publishes it to `/releases` and
