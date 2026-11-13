@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Reads the quest groups from the {@code quest_group} Documents of <b>every</b> Artisan project:
- * {@code <project>/quest_groups/<group>.yaml}, the group key being the file name (the Document id).
+ * {@code <project>/quest_groups/<group>.yml} (or {@code .yaml}), the group key being the file name (the Document id).
  * A module loaded on the server is usable in any project, so a group lives wherever its author
  * put it. Texts are loaded in the {@code default_lang} of the group's own project.
  *
@@ -61,7 +61,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
         Map<String, List<GroupFile>> byKey = new LinkedHashMap<>();
         for (String project : projects.projectIds()) {
             for (String name : files(project)) {
-                String key = name.substring(0, name.length() - ".yaml".length());
+                String key = name.substring(0, name.lastIndexOf('.'));
                 byKey.computeIfAbsent(key, k -> new ArrayList<>()).add(new GroupFile(project, name));
             }
         }
@@ -122,7 +122,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
                 List<String> files = files(project);
                 if (files.isEmpty()) continue;
                 digest.update(("\0" + project + "\0").getBytes(StandardCharsets.UTF_8));
-                String manifest = projects.read(project, "manifest.yaml");
+                String manifest = moduleFile(project);
                 if (manifest != null) digest.update(manifest.getBytes(StandardCharsets.UTF_8));
                 for (String name : files) {
                     String content = projects.read(project, DIR + "/" + name);
@@ -138,25 +138,44 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
         }
     }
 
-    /** File names of {@code <project>/quest_groups/*.yaml}, the folder's own files only, sorted. */
+    /**
+     * File names of {@code <project>/quest_groups/}, the folder's own YAML files only, sorted.
+     * Artisan writes {@code .yml} and still reads {@code .yaml}: both are read here, and of a
+     * group held twice the {@code .yml} copy is the one kept, as Artisan does.
+     */
     private List<String> files(String project) {
-        return projects.list(project, DIR).stream()
-                .filter(name -> !name.contains("/"))
-                .filter(name -> name.endsWith(".yaml"))
-                .filter(name -> !name.startsWith("."))
-                .sorted()
-                .toList();
+        Map<String, String> byKey = new java.util.TreeMap<>();
+        for (String name : projects.list(project, DIR)) {
+            if (name.contains("/") || name.startsWith(".")) continue;
+            boolean yml = name.endsWith(".yml");
+            if (!yml && !name.endsWith(".yaml")) continue;
+            String key = name.substring(0, name.lastIndexOf('.'));
+            if (yml || !byKey.containsKey(key)) byKey.put(key, name);
+        }
+        return List.copyOf(byKey.values());
+    }
+
+    /** What Artisan names a project's own file, the current name first. */
+    private static final List<String> MODULE_FILES = List.of("artisan-module.yml", "manifest.yml", "manifest.yaml");
+
+    /** The project's own file, or null when it has none. */
+    private @Nullable String moduleFile(String project) {
+        for (String name : MODULE_FILES) {
+            String content = projects.read(project, name);
+            if (content != null) return content;
+        }
+        return null;
     }
 
     /** The project's default language, {@code en} when the manifest names none. */
     public String defaultLang(String project) {
-        String manifest = projects.read(project, "manifest.yaml");
+        String manifest = moduleFile(project);
         if (manifest == null) return "en";
         Object lang;
         try {
             lang = DocumentYaml.parse(manifest).get("default_lang");
         } catch (IOException e) {
-            throw new UncheckedIOException(project + "/manifest.yaml: " + e.getMessage(), e);
+            throw new UncheckedIOException(project + ": its artisan-module.yml: " + e.getMessage(), e);
         }
         return lang != null && !lang.toString().isBlank() ? lang.toString() : "en";
     }

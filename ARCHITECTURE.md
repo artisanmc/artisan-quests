@@ -579,7 +579,7 @@ Read at startup only; a change requires a restart (`/msquests reload` points it 
 | `content_source` | Content | Progress |
 |---|---|---|
 | `legacy` (default) | `quests/*.yml` | `msquests_*`, by `(group_key, quest_key)` |
-| `artisan` | `<project>/quest_groups/<group>.yaml` of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
+| `artisan` | `<project>/quest_groups/<group>.yml` (or `.yaml`, the `.yml` copy wins) of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
 
 A Document carries an immutable `uid` (ULID) for the group and for each quest; the group
 key is the file name, renamable like quest keys without losing progress.

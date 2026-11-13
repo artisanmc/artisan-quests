@@ -85,6 +85,33 @@ class QuestGroupDocumentRepositoryTest {
     }
 
     @Test
+    void readsAGroupWrittenAsYmlTheExtensionArtisanWrites() throws Exception {
+        Files.writeString(project.resolve("quest_groups/weekly.yml"), group("G2", "Q2", ""));
+
+        assertEquals("G2", load().groups().get("weekly").uid());
+    }
+
+    @Test
+    void ofAGroupHeldInBothExtensionsTheYmlCopyIsRead() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", ""));
+        Files.writeString(project.resolve("quest_groups/daily.yml"), group("G2", "Q2", ""));
+
+        QuestConfigLoad load = load();
+
+        assertEquals("G2", load.groups().get("daily").uid());
+        assertTrue(load.failures().isEmpty(), "one group, not two files fighting over a key");
+    }
+
+    @Test
+    void readsTheDefaultLanguageFromArtisanModuleYml() throws Exception {
+        Files.delete(project.resolve("manifest.yaml"));
+        Files.writeString(project.resolve("artisan-module.yml"), "schema: module/v1\ndefault_lang: fr\n");
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", ""));
+
+        assertEquals("Quotidiennes", load().groups().get("daily").name());
+    }
+
+    @Test
     void readsTheNpcThatGivesAQuest() throws Exception {
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
                     giver: { npc: bruno, conversation: bruno_offer }
