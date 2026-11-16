@@ -14,6 +14,7 @@ import {
   slugKey,
   splitChain,
   typedKey,
+  readDistribution,
 } from "./model";
 import {
   itemValue,
@@ -389,5 +390,14 @@ describe("the group's board node", () => {
     expect(questGroupKind.board?.summary?.(doc, { project: {}, lang: "fr" })).toBe(
       "2 quêtes · dans l'ordre",
     );
+  });
+});
+
+describe("the former ladder strategy", () => {
+  it("is read as sequential, whatever its case, and other strategies are left alone", () => {
+    expect(readDistribution({ strategy: "ladder", amount: 1 })).toEqual({ strategy: "sequential", amount: 1 });
+    expect(readDistribution({ strategy: "LADDER" })).toEqual({ strategy: "sequential" });
+    expect(readDistribution({ strategy: "RANDOM" })).toEqual({ strategy: "RANDOM" });
+    expect(readDistribution(undefined)).toEqual({});
   });
 });
