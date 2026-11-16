@@ -1,10 +1,12 @@
 package com.github.ibanetchep.msquests.bukkit.artisan;
 
 import com.github.ibanetchep.msquests.bukkit.BukkitQuestsPlugin;
+import com.github.ibanetchep.msquests.bukkit.config.ContentSource;
 import com.github.ibanetchep.msquests.bukkit.event.BukkitEventDispatcher;
 import com.github.ibanetchep.msquests.bukkit.placeholder.QuestPlaceholders;
 import com.github.ibanetchep.msquests.bukkit.quest.objective.ContributableObjective;
 import com.github.ibanetchep.msquests.bukkit.text.MessageBuilder;
+import com.github.ibanetchep.msquests.core.event.CoreEvent;
 import com.github.ibanetchep.msquests.core.lang.TranslationKey;
 import com.github.ibanetchep.msquests.core.lang.Translator;
 import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
@@ -18,6 +20,8 @@ import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
 import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.ActorResolver;
+import com.github.ibanetchep.msquests.database.DbAccess;
+import com.github.ibanetchep.msquests.database.repository.QuestFiguresSqlSource;
 import net.artisanmc.modules.api.ArtisanAPI;
 import net.artisanmc.modules.api.ArtisanModule;
 import net.artisanmc.modules.api.action.ActionDeclaration;
@@ -42,6 +46,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Level;
 
@@ -58,6 +63,7 @@ import java.util.logging.Level;
  *   <li>the {@code quests:*} actions ({@link QuestActions});</li>
  *   <li>the {@code %quests_*%} placeholders ({@code QuestPlaceholders}), also given to
  *       PlaceholderAPI when it is installed;</li>
+ *   <li>the quests' statistics ({@link QuestStats}): events and the figures of the editor's Quests tab;</li>
  *   <li>three data sources and the two commands menu buttons used before the actions existed.</li>
  * </ul>
  *
@@ -85,7 +91,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
     /** Built by {@code editor/} ({@code npm run build}); the SDK version its build prints. */
     static final String EDITOR_BUNDLE = "artisan-editor/ui.js";
-    static final String EDITOR_SDK = "1.10.0";
+    static final String EDITOR_SDK = "1.23.0";
 
     /** The example quests: raise {@link #TEMPLATE_VERSION} whenever its files change. */
     static final String TEMPLATE = "daily";
@@ -272,12 +278,36 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             plugin.getLogger().warning("The quests' Game events are not available: " + e.getMessage());
             return;
         }
-        dispatcher.setObserver(new QuestGameEvents(
+        dispatcher.setObserver(observer(new QuestGameEvents(
                 api.getGameEvents(),
                 api.getScheduler().forPlugin(plugin),
                 Bukkit::getPlayer,
                 Bukkit::isPrimaryThread,
-                plugin::runSync));
+                plugin::runSync), questStats(api)));
+    }
+
+    /** {@code first} then {@code second}, when there is one. */
+    private static Consumer<CoreEvent> observer(Consumer<CoreEvent> first, @Nullable Consumer<CoreEvent> second) {
+        return second == null ? first : first.andThen(second);
+    }
+
+    /**
+     * The quests' statistics ({@link QuestStats}): their events, and with the quest_group Documents
+     * the figures of the editor's Quests tab. Null when Artisan refuses the events.
+     */
+    private @Nullable QuestStats questStats(ArtisanAPI api) {
+        // Declared even while statistics are off: Artisan drops the records, and an admin who
+        // turns them on with a reload gets the quests' without restarting.
+        QuestStats questStats = new QuestStats(api.getStats(), System::currentTimeMillis);
+        if (!questStats.declare()) {
+            plugin.getLogger().warning("The quests' statistics are not available: Artisan refused their events.");
+            return null;
+        }
+        DbAccess db = plugin.getDbAccess();
+        if (plugin.getContentSource() == ContentSource.ARTISAN && db != null) {
+            questStats.declareQueries(plugin.getQuestConfigRegistry(), new QuestFiguresSqlSource(db));
+        }
+        return questStats;
     }
 
     private void registerPlaceholders(ArtisanAPI api) {

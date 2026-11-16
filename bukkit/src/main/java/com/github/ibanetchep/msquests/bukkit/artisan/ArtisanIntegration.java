@@ -22,8 +22,10 @@ public final class ArtisanIntegration {
      * its messages served by {@code TranslationsApi}, item specs built and compared by
      * {@code ItemStackApi.matches}, {@code ConditionsApi} and the structured
      * {@code ModuleActionsApi.run}, {@code DocumentKindRegistry}, editor bundles and Game events.
+     * 1.5.0: {@code StatsApi} (the quests' statistics events and computed figures), and the editor
+     * that loads a bundle built against SDK 1.23 (the Quests tab of the Statistics space).
      */
-    public static final String MIN_API_VERSION = "1.0.0";
+    public static final String MIN_API_VERSION = "1.5.0";
 
     private final BukkitQuestsPlugin plugin;
     private final ArtisanAPI api;
