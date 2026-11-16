@@ -10,6 +10,11 @@ export const QUESTS_CSS = `
 .aq-pad { padding: 14px 16px; gap: 10px; }
 .aq-card-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
 .aq-h { font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--text); }
+.aq-h-row { display: inline-flex; align-items: center; gap: 8px; }
+.aq-help { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border-soft); color: var(--text-mut); font-family: var(--font-body, inherit); font-size: 11px; font-weight: 600; cursor: help; }
+.aq-help:hover, .aq-help:focus-visible { color: var(--text); border-color: var(--text-mut); outline: none; }
+.aq-help::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: max-content; max-width: min(360px, 70vw); padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--r-sm, 6px); background: var(--surface-raised-2); color: var(--text); font-size: 12px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; box-shadow: 0 6px 18px rgb(0 0 0 / .35); opacity: 0; pointer-events: none; transition: opacity .1s; }
+.aq-help:hover::after, .aq-help:focus-visible::after { opacity: 1; }
 .aq-count, .aq-mut { color: var(--text-mut); }
 .aq-grow { flex: 1; }
 .aq-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mut); }

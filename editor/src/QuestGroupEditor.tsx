@@ -1421,7 +1421,12 @@ function QuestView({
 
         {ordered && (
           <section className="aq-card aq-pad">
-            <span className="aq-h" title={t("completedWhenHint")}>{t("completedWhen")}</span>
+            <span className="aq-h aq-h-row">
+              {t("completedWhen")}
+              <span className="aq-help" tabIndex={0} role="note" aria-label={t("completedWhenHint")} data-tip={t("completedWhenHint")}>
+                ?
+              </span>
+            </span>
             <ConditionsEditor
               key={quest.uid}
               projectId={ctx.projectId}
