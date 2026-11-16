@@ -111,8 +111,8 @@ const W = {
   strategy: "How quests are handed out",
   "strategy.none": "All at once",
   "strategy.random": "At random",
-  completedWhen: "Done when",
-  completedWhenEmpty: "Once the quest is completed",
+  completedWhen: "Already done if",
+  completedWhenEmpty: "Only once the quest is completed",
   amount: "Quests handed out",
   triggers: "Hand out when",
   "trigger.actor_load": "the player joins",
@@ -248,8 +248,8 @@ const W = {
   strategy: "Comment les quêtes sont données",
   "strategy.none": "Toutes d'un coup",
   "strategy.random": "Au hasard",
-  completedWhen: "Faite quand",
-  completedWhenEmpty: "Une fois la quête terminée",
+  completedWhen: "Déjà faite si",
+  completedWhenEmpty: "Seulement une fois la quête terminée",
   amount: "Quêtes données",
   triggers: "Donner quand",
   "trigger.actor_load": "le joueur se connecte",
@@ -1387,7 +1387,7 @@ function pn({
               ] }) : /* @__PURE__ */ y(H, { children: [
                 /* @__PURE__ */ y("span", { className: "aq-chips", children: [
                   Yt(b) && /* @__PURE__ */ r(C, { tone: "warn", children: i("toComplete") }),
-                  g && N.length > 0 && /* @__PURE__ */ y(C, { tone: "ok", children: [
+                  g && N.length > 0 && /* @__PURE__ */ y(C, { children: [
                     i("completedWhen"),
                     " ",
                     Ae(N) !== null ? /* @__PURE__ */ r("span", { className: "aq-mono", children: Ae(N) }) : i("conditionCount", { count: N.length })

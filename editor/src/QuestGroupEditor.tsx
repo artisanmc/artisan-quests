@@ -588,7 +588,7 @@ function GroupView({
                     <span className="aq-chips">
                       {questIncomplete(q) && <Chip tone="warn">{t("toComplete")}</Chip>}
                       {ordered && conditions.length > 0 && (
-                        <Chip tone="ok">
+                        <Chip>
                           {t("completedWhen")}{" "}
                           {conditionsText(conditions) !== null ? (
                             <span className="aq-mono">{conditionsText(conditions)}</span>
