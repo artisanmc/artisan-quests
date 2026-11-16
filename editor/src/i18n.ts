@@ -2,7 +2,7 @@ import { createModuleI18n } from "@artisan/editor-sdk";
 
 const en = {
   kindLabel: "Quest groups",
-  collection: "Quests",
+  collection: "Quest groups",
   title: "Title",
   description: "Description",
   actorType: "Who plays",
@@ -151,7 +151,7 @@ type Key = keyof typeof en;
 
 const fr: Record<Key, string> = {
   kindLabel: "Groupes de quêtes",
-  collection: "Quêtes",
+  collection: "Groupes de quêtes",
   title: "Titre",
   description: "Description",
   actorType: "Qui joue",

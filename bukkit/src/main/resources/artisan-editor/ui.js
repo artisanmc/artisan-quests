@@ -94,7 +94,7 @@ function At(e) {
 }
 const F = {
   kindLabel: "Quest groups",
-  collection: "Quests",
+  collection: "Quest groups",
   title: "Title",
   description: "Description",
   actorType: "Who plays",
@@ -236,7 +236,7 @@ const F = {
   givenBy: "Given by {{npc}}"
 }, ae = {
   kindLabel: "Groupes de quêtes",
-  collection: "Quêtes",
+  collection: "Groupes de quêtes",
   title: "Titre",
   description: "Description",
   actorType: "Qui joue",
