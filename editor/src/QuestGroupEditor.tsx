@@ -4,13 +4,17 @@ import {
   ConditionsEditor,
   type DocumentEditorProps,
   ItemInput,
+  LocalizedField,
   type ItemComparisonWire,
   MaterialInput,
+  McText,
   MiniMessageInput,
   SortableList,
   type TextWrite,
   injectModuleStyles,
+  mcWrap,
   newTextKey,
+  projectLangs,
   selectDocumentItem,
   textValue,
   textValues,
@@ -234,18 +238,51 @@ function Field({
   );
 }
 
+/**
+ * A translatable text, the way Artisan edits every one (`LocalizedField`): the content
+ * language's text, the default language's as a placeholder when it has none, and the
+ * translations toggle unfolding every language in place.
+ */
 function TextField({
   ctx,
   label,
   node,
   multiline,
-}: { ctx: Ctx; label: string; node: Text; multiline?: boolean }) {
-  const value = textValue(ctx.project, node.key, ctx.lang);
-  const write = (v: string) => ctx.edit(() => {}, [{ key: node.key, lang: ctx.lang, value: v }]);
+  rows,
+  bare,
+  placeholder,
+}: {
+  ctx: Ctx;
+  label: string;
+  node: Text;
+  multiline?: boolean;
+  rows?: number;
+  /** No label row: the text is written where it reads (a quest's title, a stage's). */
+  bare?: boolean;
+  placeholder?: string;
+}) {
+  const langs = projectLangs(ctx.project);
   return (
-    <Field label={`${label} · ${ctx.lang}`}>
-      <MiniMessageInput value={value} onChange={write} multiline={multiline} aria-label={label} />
-    </Field>
+    <LocalizedField
+      className="aq-field"
+      label={label}
+      langs={langs}
+      activeLang={ctx.lang}
+      defaultLang={langs[0] ?? ctx.lang}
+      values={textValues(ctx.project, node.key)}
+      onChange={(lang, value) => ctx.edit(() => {}, [{ key: node.key, lang, value }])}
+      inline={bare}
+      renderEditor={(e) => (
+        <MiniMessageInput
+          value={e.value}
+          onChange={e.onChange}
+          placeholder={e.fallback ?? placeholder}
+          multiline={multiline}
+          rows={multiline ? rows : undefined}
+          aria-label={e.label}
+        />
+      )}
+    />
   );
 }
 
@@ -551,9 +588,11 @@ function GroupView({
                       {ordered && conditions.length > 0 && (
                         <Chip tone="ok">
                           {t("completedWhen")}{" "}
-                          <span className="aq-mono">
-                            {conditionsText(conditions) ?? String(conditions.length)}
-                          </span>
+                          {conditionsText(conditions) !== null ? (
+                            <span className="aq-mono">{conditionsText(conditions)}</span>
+                          ) : (
+                            t("conditionCount", { count: conditions.length })
+                          )}
                         </Chip>
                       )}
                       {q.tier && (
@@ -610,7 +649,27 @@ function GroupView({
 }
 
 function actorLabel(t: T, actorType: string): string {
-  return actorType === "player" || actorType === "global" ? t(`actor.${actorType}`) : actorType;
+  return actorType === "player" || actorType === "global" || actorType === "guild"
+    ? t(`actor.${actorType}`)
+    : actorType;
+}
+
+const BUILT_IN_ACTORS = ["player", "global"];
+/** Actor types of other plugins met since the editor opened: a choice left stays offered. */
+const metActors = new Set<string>();
+
+/**
+ * Who may play a group: the two built-in types, then the types other plugins add (`guild`)
+ * that the project's groups use or used. The editor cannot ask the server for its registry.
+ */
+export function actorChoices(project: unknown, current: string): string[] {
+  const groups = (project as { documents?: Record<string, unknown> } | undefined)?.documents?.[KIND];
+  for (const g of Array.isArray(groups) ? groups : []) {
+    const type = (g as { actorType?: unknown }).actorType;
+    if (typeof type === "string" && type) metActors.add(type);
+  }
+  if (current) metActors.add(current);
+  return [...BUILT_IN_ACTORS, ...[...metActors].filter((a) => !BUILT_IN_ACTORS.includes(a)).sort()];
 }
 
 /** The three ways a group hands its quests out; `sequential` and `ladder` are both "in order". */
@@ -647,9 +706,7 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
     ? (group.distribution.triggers as string[])
     : [];
   const perTier = (group.distribution.tiers ?? {}) as Record<string, unknown>;
-  const actors = ["player", "global"].includes(group.actorType)
-    ? ["player", "global"]
-    : ["player", "global", group.actorType];
+  const actors = actorChoices(project, group.actorType);
 
   return (
     <div className="aq-settings">
@@ -789,7 +846,8 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
           </Button>
         </div>
         {group.tiers.map((tier, i) => (
-          <div key={tier.key} className="aq-row">
+          <div key={tier.key} className="aq-tier">
+            <TextField ctx={ctx} label={t("title")} node={tier.title} />
             <Field label={t("tierKey")}>
               <input
                 className="input aq-mono"
@@ -813,7 +871,6 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
                 }}
               />
             </Field>
-            <TextField ctx={ctx} label={t("title")} node={tier.title} />
             {!ordered && (
               <NumberField
                 label={t("perTier")}
@@ -1160,23 +1217,15 @@ function QuestView({
         <section className="aq-card">
           <div className="aq-quest-head">
             <div className="aq-quest-name">
-              <MiniMessageInput
-                value={textValue(project, quest.title.key, lang)}
-                placeholder={t("title")}
-                aria-label={t("title")}
-                onChange={(value) => edit(() => {}, [{ key: quest.title.key, lang, value }])}
-              />
+              <TextField ctx={ctx} label={t("questName")} node={quest.title} />
             </div>
-            <div className="aq-quest-desc">
-              <MiniMessageInput
-                value={textValue(project, quest.description.key, lang)}
-                placeholder={t("description")}
-                aria-label={t("description")}
-                multiline
-                rows={2}
-                onChange={(value) => edit(() => {}, [{ key: quest.description.key, lang, value }])}
-              />
-            </div>
+            <TextField
+              ctx={ctx}
+              multiline
+              rows={2}
+              label={t("questDescription")}
+              node={quest.description}
+            />
           </div>
           <button
             type="button"
@@ -1380,7 +1429,6 @@ function StageCard({
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const editStage = (recipe: (s: Stage) => void) => editQuest((q) => recipe(q.stages[si]!));
-  const title = textValue(ctx.project, stage.title.key, ctx.lang);
   // A stage without `flow` reads as parallel (QuestStageConfig).
   const flow = stage.flow || "parallel";
   const allKeys = quest.stages.flatMap((s) => s.objectives.map((o) => o.key));
@@ -1401,15 +1449,14 @@ function StageCard({
     <div className="aq-card aq-stage">
       <div className="aq-stage-head">
         {handle}
-        <span className="aq-n is-brand">{si + 1}</span>
+        <span className="aq-eyebrow aq-stage-label">{t("stage", { n: si + 1 })}</span>
         <div className="aq-stage-title">
-          <MiniMessageInput
-            value={title}
-            placeholder={t("stageTitle")}
-            aria-label={t("stage", { n: si + 1 })}
-            onChange={(value) =>
-              ctx.edit(() => {}, [{ key: stage.title.key, lang: ctx.lang, value }])
-            }
+          <TextField
+            ctx={ctx}
+            bare
+            label={t("stageName")}
+            node={stage.title}
+            placeholder={t("stageNameDefault", { n: si + 1 })}
           />
         </div>
         {stage.objectives.length > 1 && (
@@ -1438,6 +1485,9 @@ function StageCard({
           }
         />
       </div>
+      <span className="aq-eyebrow">
+        {t("objectives")} <span className="aq-count">{stage.objectives.length}</span>
+      </span>
       <SortableList
         ids={rowIds(stage.objectives.map((o) => o.key))}
         onMove={(from, to) => editStage((s) => move(s.objectives, from, to))}
@@ -1560,7 +1610,7 @@ function ObjectiveRow({
           <span className="aq-obj-text">
             {typeLabel(t, objective.type)}
             {target !== undefined && <strong> · {String(target)}</strong>}
-            {subject ? ` × ${subject}` : target !== undefined ? ` × ${t("any")}` : ""}
+            {subject ? ` × ${subject}` : target !== undefined && spec ? ` × ${t("any")}` : ""}
           </span>
           {problem && (
             <Chip tone="warn">
@@ -1738,31 +1788,50 @@ function ParamField({
   );
 }
 
+/** The tooltip's width in Minecraft pixels: lines wrap there, as lore does in game. */
+const PREVIEW_WIDTH = 170;
+const PREVIEW_GRAY = { color: "#aaaaaa", italic: false };
+const PREVIEW_WHITE = { color: "#ffffff", italic: false };
+
+/**
+ * The quest as an item tooltip draws it in game: its title, its description line by line with
+ * its colours, then each stage's objectives at 0. A menu may lay a quest out otherwise; this
+ * shows the texts as the client renders them.
+ */
 function Preview({ ctx, quest }: { ctx: Ctx; quest: Quest }) {
   const { t, project, lang } = ctx;
-  const line = (o: Objective) => objectiveLine(t, o);
-  const description = plainText(textValue(project, quest.description.key, lang));
+  const wrap = (source: string) =>
+    source.split("\n").flatMap((line) => (line === "" ? [""] : mcWrap(line, PREVIEW_WIDTH)));
+  const title = textValue(project, quest.title.key, lang) || quest.key;
+  const description = textValue(project, quest.description.key, lang);
+  const staged = quest.stages.length > 1;
   return (
     <div className="aq-preview">
-      <span className="aq-preview-title">
-        {plainText(textValue(project, quest.title.key, lang)) || quest.key}
-      </span>
-      {description && <span className="aq-preview-line">{description}</span>}
-      {quest.stages.map((s, si) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: stages are listed in order
-        <span key={si} className="aq-preview-stage">
-          {quest.stages.length > 1 && (
-            <span className="aq-preview-head">
-              {plainText(textValue(project, s.title.key, lang)) || t("stage", { n: si + 1 })}
-            </span>
-          )}
-          {s.objectives.map((o) => (
-            <span key={o.key} className="aq-preview-line">
-              • {line(o)}
-            </span>
-          ))}
-        </span>
-      ))}
+      <div className="aq-preview-frame">
+        <McText source={wrap(title).join("\n")} defaults={PREVIEW_WHITE} scale={2} />
+        {description && (
+          <McText source={wrap(description).join("\n")} defaults={PREVIEW_GRAY} scale={2} />
+        )}
+        {quest.stages.map((s, si) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: stages are listed in order
+          <div key={si} className="aq-preview-stage">
+            {staged && (
+              <McText
+                source={wrap(textValue(project, s.title.key, lang) || t("stage", { n: si + 1 })).join("\n")}
+                defaults={PREVIEW_WHITE}
+                scale={2}
+              />
+            )}
+            {s.objectives.length > 0 && (
+              <McText
+                source={s.objectives.flatMap((o) => wrap(`• ${objectiveLine(t, o)}`)).join("\n")}
+                defaults={PREVIEW_GRAY}
+                scale={2}
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # MSQuests - English messages (MiniMessage format).
 # %placeholders% are replaced before MiniMessage parsing.
-file_version: 1
+file_version: 2
 
 quest_admin:
   # /msquests reload (no placeholders)
@@ -120,6 +120,8 @@ placeholder:
   quest: '%quest_status_prefix%%quest_name%%quest_status_suffix%'
   # %stage_name%, %stage_key%
   stage: '%stage_name%'
+  # A stage the quest gives no name: %stage_number%
+  stage_default_name: 'Stage %stage_number%'
   # Objective placeholders
   objective: '%objective_status_prefix%%objective_name%%objective_status_suffix% <gray>%objective_progress%/%objective_target%</gray>'
 

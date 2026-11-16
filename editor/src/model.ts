@@ -82,6 +82,17 @@ export interface QuestGroup {
   rest: Raw;
 }
 
+/**
+ * A group's `distribution` as the editor holds it. `ladder`, the former name of the in-order
+ * mode, is read as `sequential` (as the server reads it): the next save writes the one name.
+ */
+export function readDistribution(value: unknown): Raw {
+  const distribution = { ...asMap(value) };
+  if (typeof distribution.strategy === "string" && distribution.strategy.toLowerCase() === "ladder")
+    distribution.strategy = "sequential";
+  return distribution;
+}
+
 // ------------------------------------------------------------------ ids
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -234,7 +245,7 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
     reset: asMap(src.reset),
     limits: asMap(src.limits),
     rotation: asMap(src.rotation),
-    distribution: asMap(src.distribution),
+    distribution: readDistribution(src.distribution),
     tiers,
     quests,
     rest: renameOn(without(

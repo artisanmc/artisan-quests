@@ -66,6 +66,8 @@ describe("the quest list's rows", () => {
     expect(completedWhen({})).toEqual([]);
     expect(completedWhen({ completed_when: "guild_level >= 2" })).toEqual(["guild_level >= 2"]);
     expect(conditionsText(["guild_level >= 2", "online"])).toBe("guild_level >= 2 · online");
+    expect(conditionsText([{ expression: "guild_level >= 10" }])).toBe("guild_level >= 10");
+    expect(conditionsText([{ expression: "guild_level >= 10" }, { permission: "a.b" }])).toBeNull();
     expect(conditionsText([{ type: "permission" }])).toBeNull();
   });
 });

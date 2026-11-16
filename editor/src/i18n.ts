@@ -8,6 +8,7 @@ const en = {
   actorType: "Who plays",
   "actor.player": "Each player",
   "actor.global": "The whole server",
+  "actor.guild": "Each guild",
   reset: "Period reset",
   cron: "Schedule (cron)",
   cronInvalid: "A cron has 5 fields: minute hour day month weekday.",
@@ -74,7 +75,11 @@ const en = {
   more: "More options",
   objectiveKeyHint:
     "Progress is stored under this key: changing it resets the progress of the players doing this quest.",
-  stageTitle: "Stage title (optional)",
+  stageName: "Stage name",
+  stageNameDefault: "Name (default: Stage {{n}})",
+  questName: "Quest name",
+  questDescription: "Quest description",
+  objectives: "Objectives",
   missing: "To fill: {{fields}}",
   kept: "Kept as is: {{fields}}",
   preview: "In game",
@@ -132,6 +137,7 @@ const en = {
   eventCount: "Events: {{count}}",
   tierCount: "Tiers: {{count}}",
   noTimeLimit: "No time limit",
+  conditionCount: "Conditions: {{count}}",
   givenBy: "Given by {{npc}}",
 };
 
@@ -145,6 +151,7 @@ const fr: Record<Key, string> = {
   actorType: "Qui joue",
   "actor.player": "Chaque joueur",
   "actor.global": "Tout le serveur",
+  "actor.guild": "Chaque guilde",
   reset: "Réinitialisation",
   cron: "Planification (cron)",
   cronInvalid: "Un cron a 5 champs : minute heure jour mois jour-de-semaine.",
@@ -212,7 +219,11 @@ const fr: Record<Key, string> = {
   more: "Plus d'options",
   objectiveKeyHint:
     "La progression est stockée sous cette clé : la changer remet à zéro la progression des joueurs qui font cette quête.",
-  stageTitle: "Titre de l'étape (facultatif)",
+  stageName: "Nom de l'étape",
+  stageNameDefault: "Nom (par défaut : Étape {{n}})",
+  questName: "Nom de la quête",
+  questDescription: "Description de la quête",
+  objectives: "Objectifs",
   missing: "À remplir : {{fields}}",
   kept: "Conservé tel quel : {{fields}}",
   preview: "En jeu",
@@ -270,6 +281,7 @@ const fr: Record<Key, string> = {
   eventCount: "Événements : {{count}}",
   tierCount: "Paliers : {{count}}",
   noTimeLimit: "Sans limite de temps",
+  conditionCount: "Conditions : {{count}}",
   givenBy: "Donnée par {{npc}}",
 };
 

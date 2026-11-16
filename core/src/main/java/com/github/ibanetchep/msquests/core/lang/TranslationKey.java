@@ -21,6 +21,7 @@ public enum TranslationKey implements Translatable {
     ZMENU_QUEST_PROGRESS_COMPLETED("zmenu.quest.progress.completed"),
     PLACEHOLDER_QUEST("placeholder.quest"),
     PLACEHOLDER_STAGE("placeholder.stage"),
+    PLACEHOLDER_STAGE_DEFAULT_NAME("placeholder.stage_default_name"),
     PLACEHOLDER_OBJECTIVE("placeholder.objective");
 
     private final String key;
