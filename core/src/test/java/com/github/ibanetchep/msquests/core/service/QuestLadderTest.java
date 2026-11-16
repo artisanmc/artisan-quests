@@ -9,8 +9,9 @@ import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestStatus;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.action.ChainRunner;
+import com.github.ibanetchep.msquests.core.quest.config.condition.Conditions;
 import com.github.ibanetchep.msquests.core.quest.config.group.DistributionConfig;
-import com.github.ibanetchep.msquests.core.quest.config.group.LadderPositions;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.executor.AtomicQuestExecutor;
@@ -22,6 +23,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
@@ -37,7 +40,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** A ladder's current quest follows an outside value, not the completions it stored. */
+/** A ladder's current quest is the first step whose {@code completed_when} does not hold. */
 class QuestLadderTest {
 
     static class TestActor extends QuestActor {
@@ -45,6 +48,8 @@ class QuestLadderTest {
         @Override public String getActorType() { return "guild"; }
         @Override public boolean isMember(UUID playerId) { return false; }
     }
+
+    private static final List<String> KEYS = List.of("level_01", "level_02", "level_03");
 
     private final AtomicInteger level = new AtomicInteger();
     private QuestGroupConfig group;
@@ -56,11 +61,12 @@ class QuestLadderTest {
     void setUp() {
         group = new QuestGroupConfig.Builder("guild_levels", "Levels", "", "guild")
                 .maxActive(1)
-                .distributionConfig(new DistributionConfig(
-                        QuestDistributionStrategy.LADDER, 1, Set.of(), "%msguilds_level%"))
+                .distributionConfig(new DistributionConfig(QuestDistributionStrategy.LADDER, 1, Set.of()))
                 .build();
-        for (String key : List.of("level_01", "level_02", "level_03")) {
-            group.addQuest(new QuestConfig(key, key, "", 0L));
+        for (int i = 0; i < KEYS.size(); i++) {
+            QuestConfig step = new QuestConfig(KEYS.get(i), KEYS.get(i), "", 0L);
+            step.setCompletedWhen(Conditions.of(List.of(Map.of("expression", "guild_level >= " + (i + 1)))));
+            group.addQuest(step);
         }
         actor = new TestActor();
 
@@ -79,10 +85,8 @@ class QuestLadderTest {
                 mock(EventDispatcher.class), persistence, factory, mock(QuestRegistry.class), mock(QuestConfigRegistry.class),
                 mock(AtomicQuestExecutor.class), new QuestDistributionService(), mock(RotationRepository.class),
                 mock(MSQuestsPlatform.class), mock(ChainRunner.class));
-        service.setLadderPositions((a, expression) -> {
-            assertEquals("%msguilds_level%", expression);
-            return OptionalInt.of(level.get());
-        });
+        // Stands for the conditions: step i is done once the level reached i + 1.
+        service.setLadderSteps((a, step, viewer) -> Optional.of(level.get() >= KEYS.indexOf(step.getKey()) + 1));
     }
 
     private ActorQuestGroup ladder() {
@@ -96,15 +100,16 @@ class QuestLadderTest {
     }
 
     @Test
-    void theQuestAtThePositionStarts() {
+    void theFirstStepNotDoneStarts() {
         level.set(1);
         service.syncLadder(actor, group);
         assertTrue(ladder().hasActive("level_02"));
         assertEquals(1, ladder().getInProgressCount());
+        assertEquals(OptionalInt.of(1), service.ladderIndex(actor, group, null));
     }
 
     @Test
-    void aRaisedLevelSwapsTheActiveQuestWithoutCountingAFailure() {
+    void aLevelRaisedByHandSkipsTheStepsItPassed() {
         Quest first = give("level_01", QuestStatus.IN_PROGRESS);
         level.set(2);
 
@@ -136,6 +141,7 @@ class QuestLadderTest {
         service.syncLadder(actor, group);
 
         assertEquals(0, ladder().getInProgressCount());
+        assertEquals(OptionalInt.of(3), service.ladderIndex(actor, group, null));
     }
 
     @Test
@@ -150,19 +156,31 @@ class QuestLadderTest {
     }
 
     @Test
-    void anUnknownPositionChangesNothing() {
+    void stepsThatCannotBeReadChangeNothing() {
         Quest current = give("level_01", QuestStatus.IN_PROGRESS);
-        service.setLadderPositions((a, expression) -> OptionalInt.empty());
+        service.setLadderSteps(LadderSteps.NONE);
+        level.set(2);
 
         service.syncLadder(actor, group);
 
         assertTrue(actor.getQuests().containsKey(current.getId()));
-        assertEquals(1, ladder().getInProgressCount());
+        assertEquals(OptionalInt.empty(), service.ladderIndex(actor, group, null));
     }
 
     @Test
-    void theStateOfEachStepFollowsThePosition() {
-        assertEquals(List.of(LadderPositions.State.REACHED, LadderPositions.State.CURRENT, LadderPositions.State.LOCKED),
-                List.of(LadderPositions.state(0, 1), LadderPositions.state(1, 1), LadderPositions.state(2, 1)));
+    void aStepWithoutConditionIsDoneOnceCompleted() {
+        group.getQuestConfigs().get("level_01").setCompletedWhen(Conditions.NONE);
+        assertEquals(OptionalInt.of(0), service.ladderIndex(actor, group, null));
+
+        give("level_01", QuestStatus.COMPLETED);
+        level.set(1);
+
+        assertEquals(OptionalInt.of(1), service.ladderIndex(actor, group, null));
+    }
+
+    @Test
+    void theStateOfEachStepFollowsTheCurrentOne() {
+        assertEquals(List.of(LadderSteps.State.REACHED, LadderSteps.State.CURRENT, LadderSteps.State.LOCKED),
+                List.of(LadderSteps.state(0, 1), LadderSteps.state(1, 1), LadderSteps.state(2, 1)));
     }
 }

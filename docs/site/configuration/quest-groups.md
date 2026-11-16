@@ -44,31 +44,42 @@ quests:
 | `reset.cron`, `reset.timezone` | cron, zone | When the period ends and quests reset. |
 | `limits.max_active` | integer | Active quests at once per actor. |
 | `distribution.strategy` | `none`, `random`, `sequential`, `ladder` | How quests are handed out. |
-| `distribution.position` | text | `ladder` only: a placeholder giving a whole number, such as `%guild_level%`. |
 | `distribution.amount` | integer | How many per distribution. |
 | `distribution.triggers` | list | `actor_load` (an actor joins), `period_reset`, `quest_complete`. |
 
 ## Ladders (rankup)
 
-With `strategy: ladder`, the current quest follows an outside value instead of the quests
-completed so far: quest `i` of the list takes the actor from `i` to `i + 1`, so the quest at
-`position` is the one in progress.
+With `strategy: ladder`, the current quest follows the state of the actor instead of the quests
+completed so far. Each quest says when it is done with `completed_when`, the state it aims at; the
+current quest is the first of the list that is not done.
 
 ```yaml
-distribution: { strategy: ladder, position: "%guild_level%" }
+actor_type: guild
+distribution: { strategy: ladder }
+quests:
+  - key: level_01
+    completed_when: [{ expression: "guild_level >= 1" }]
+    actions:
+      complete:
+        - run_command: { command: "guild admin setlevel {actor_name} 1", as: console }
+  - key: level_02
+    completed_when: [{ expression: "guild_level >= 2" }]
 ```
 
-- The position is read when the actor loads, after each quest of the group completes (its rewards
-  run first, so a reward that raises the level moves to the next quest), and every minute.
-- A quest that is no longer at the position (level changed by hand, guild reset) is removed
-  without counting as a failure, and the right one starts. A step done before is offered again
-  when the position comes back to it.
-- `amount`, `triggers` and the period limits do not apply. Above the last quest, none is active.
-- The actor's own placeholders are read first and need nobody online: `%guild_level%`,
-  `%guild_members%` on a guild (ArtisanGuildQuests), `%actor_name%`. Anything else goes through
-  PlaceholderAPI for an online member (the player, a guild member); with nobody online, it waits.
-- In `quests:quests`, `ladder_index` is the step (from 0) and `ladder_state` is `reached`,
-  `current` or `locked`, read live for the actor the menu shows.
+- `completed_when` is a list of Artisan conditions, like `requirements`. Write the goal, not an
+  exact value: `>= 2`, `has_permission: group.citoyen`. Inherited ranks and a level raised by
+  several steps then read right. The reward is what makes it true.
+- Quests before the current one read `COMPLETED` in `quests:quests`, the ones after `NOT_STARTED`
+  with `start_blocker: LOCKED`, whatever was completed before: a menu is written like for any group.
+- The ladder is put in step when the actor loads, after each completion (its rewards run first),
+  every minute, and when a menu reads `quests:quests`. A quest that is no longer the current one
+  is removed without counting as a failure; one done before is offered again when the state comes
+  back to it, with its rewards. `amount`, `triggers` and the period limits do not apply.
+- The actor's values are variables of `expression`: `guild_level`, `guild_members`, `guild_name`
+  on a guild (ArtisanGuildQuests), `actor_name`. Such conditions are read as soon as any player is
+  online. Conditions about the player (`has_permission`, a `%placeholder%`) are read for a member
+  of the actor only: with none online, the ladder keeps its last state.
+- A quest without `completed_when` is done once the actor completed it.
 
 ## Quest keys
 
@@ -79,6 +90,7 @@ distribution: { strategy: ladder, position: "%guild_level%" }
 | `stages[]` | list | Done in order; each has a `key` and `objectives`. |
 | `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys. |
 | `actions.complete` | action chain | The reward: any Artisan action. |
+| `completed_when` | conditions | In a ladder group: the state the quest aims at. |
 
 Objective types: `block_break`, `breed_animal`, `craft_item`, `harvest_crop`, `deliver_item`,
 `kill_entity`, `execute_command`, `fishing`, `placeholder`, `travel`.

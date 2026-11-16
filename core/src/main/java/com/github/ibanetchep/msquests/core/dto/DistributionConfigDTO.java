@@ -5,10 +5,6 @@ import java.util.List;
 public record DistributionConfigDTO(
         String strategy,
         Integer amount,
-        List<String> triggers,
-        String position
+        List<String> triggers
 ) {
-    public DistributionConfigDTO(String strategy, Integer amount, List<String> triggers) {
-        this(strategy, amount, triggers, null);
-    }
 }

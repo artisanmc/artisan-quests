@@ -101,16 +101,10 @@ public final class QuestGroupDocumentReader {
         DistributionConfigDTO distributionDto = null;
         String strategy = string(distribution.get("strategy"), "distribution.strategy");
         if (strategy != null) {
-            String position = string(distribution.get("position"), "distribution.position");
-            if (strategy.equalsIgnoreCase("ladder") && (position == null || position.isBlank())) {
-                throw new DocumentException("distribution.position",
-                        "a ladder needs a position, such as \"%msguilds_level%\"");
-            }
             distributionDto = new DistributionConfigDTO(
                     strategy.toUpperCase(Locale.ROOT),
                     integer(distribution.get("amount"), "distribution.amount"),
-                    strings(distribution.get("triggers"), "distribution.triggers"),
-                    position);
+                    strings(distribution.get("triggers"), "distribution.triggers"));
         }
 
         String hooksKey = actionsKey(doc);
@@ -237,7 +231,8 @@ public final class QuestGroupDocumentReader {
                     quest.get("requirements") != null ? conditions(quest.get("requirements"), path + ".requirements") : null,
                     uid,
                     hooks,
-                    giver(quest.get("giver"), path + ".giver"));
+                    giver(quest.get("giver"), path + ".giver"),
+                    quest.get("completed_when") != null ? conditions(quest.get("completed_when"), path + ".completed_when") : null);
         } catch (IllegalArgumentException e) {
             throw new DocumentException(path, e.getMessage());
         }

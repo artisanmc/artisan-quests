@@ -270,7 +270,7 @@ function GroupView({
   const cronWords = cron ? describeCron(cron, uiLang) : null;
   const timezone = typeof group.reset.timezone === "string" ? group.reset.timezone : "";
   const nextRun = cron && isCronShape(cron) ? nextRunLabel(cron, uiLang) : null;
-  // A ladder follows its position: no amount, no triggers, the quest at the position is the one.
+  // A ladder has no amount nor triggers: its current quest is the first whose completed_when is false.
   const ladder =
     typeof group.distribution.strategy === "string" && group.distribution.strategy.toLowerCase() === "ladder";
   const triggers = Array.isArray(group.distribution.triggers)
@@ -380,16 +380,7 @@ function GroupView({
               ))}
             </select>
           </Field>
-          {ladder ? (
-            <Field label={t("position")}>
-              <input
-                className="input"
-                value={typeof group.distribution.position === "string" ? group.distribution.position : ""}
-                placeholder="%msguilds_level%"
-                onChange={(e) => edit((g) => setOrDelete(g.distribution, "position", e.target.value || undefined))}
-              />
-            </Field>
-          ) : (
+          {!ladder && (
             <NumberField
               label={t("amount")}
               value={group.distribution.amount}

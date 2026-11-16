@@ -53,7 +53,7 @@ public class QuestDistributionService {
             return QuestStartResult.ALREADY_COMPLETED;
         }
 
-        // A ladder follows its position: a step done before is offered again when the position comes back.
+        // A ladder follows its steps: one done before is offered again when it is the current one.
         boolean ladder = strategy == QuestDistributionStrategy.LADDER;
 
         if (!ladder && groupConfig.getMaxPerPeriod() != null && group.hasStartedInCurrentPeriod(questConfig.getKey())) {

@@ -94,8 +94,7 @@ const Q = {
   "strategy.none": "All at once",
   "strategy.sequential": "In list order",
   "strategy.random": "At random",
-  "strategy.ladder": "By position (rankup)",
-  position: "Position (a whole number, such as %msguilds_level%)",
+  "strategy.ladder": "Rankup: the first quest not done",
   amount: "Quests handed out",
   triggers: "Hand out when",
   "trigger.actor_load": "the player joins",
@@ -219,8 +218,7 @@ const Q = {
   "strategy.none": "Toutes d'un coup",
   "strategy.sequential": "Dans l'ordre de la liste",
   "strategy.random": "Au hasard",
-  "strategy.ladder": "Selon la position (rankup)",
-  position: "Position (un nombre entier, comme %msguilds_level%)",
+  "strategy.ladder": "Rankup : la première quête non faite",
   amount: "Quêtes données",
   triggers: "Donner quand",
   "trigger.actor_load": "le joueur se connecte",
@@ -470,7 +468,7 @@ function rt(e) {
 function st(e) {
   return typeof e == "string" ? e === "" : Object.values(e).every((t) => t === "");
 }
-function S(e) {
+function R(e) {
   const t = {};
   for (const [i, n] of Object.entries(e))
     n == null || n === "" || Array.isArray(n) && n.length === 0 || typeof n == "object" && !Array.isArray(n) && Object.keys(n).length === 0 || (t[i] = n);
@@ -499,7 +497,7 @@ function lt(e, t) {
   }, a = {};
   for (const u of e.tiers) a[u.key] = { ...u.rest, title: i(u.title) };
   const r = e.quests.map(
-    (u) => S({
+    (u) => R({
       key: u.key,
       uid: u.uid,
       tier: u.tier,
@@ -508,7 +506,7 @@ function lt(e, t) {
       duration: u.duration,
       ...u.rest,
       stages: u.stages.map(
-        (m) => S({
+        (m) => R({
           key: m.key,
           title: n(m.title),
           flow: m.flow,
@@ -525,16 +523,16 @@ function lt(e, t) {
     title: i(e.title),
     description: n(e.description),
     actor_type: e.actorType,
-    reset: S(e.reset),
-    limits: S(e.limits),
-    rotation: S(e.rotation),
-    distribution: S(e.distribution),
+    reset: R(e.reset),
+    limits: R(e.limits),
+    rotation: R(e.rotation),
+    distribution: R(e.distribution),
     tiers: a,
     quests: r
   }, d = {};
   for (const u of ot) u in o && (d[u] = o[u]);
   for (const u of Object.keys(o)) u in d || (d[u] = o[u]);
-  const l = S(d);
+  const l = R(d);
   return l.quests = r, l;
 }
 function* ct(e) {
@@ -606,29 +604,29 @@ const pt = [
   "objective_complete",
   "quest_complete",
   "period_complete"
-], mt = ["start", "objective_progress", "objective_complete", "complete"], R = { name: "amount", kind: "int", required: !0 }, je = [
-  { type: "block_break", icon: "⛏", params: [{ name: "material", kind: "material" }, R] },
+], mt = ["start", "objective_progress", "objective_complete", "complete"], S = { name: "amount", kind: "int", required: !0 }, je = [
+  { type: "block_break", icon: "⛏", params: [{ name: "material", kind: "material" }, S] },
   {
     type: "craft_item",
     icon: "⚒",
-    params: [{ name: "item", kind: "item", legacy: "material" }, R]
+    params: [{ name: "item", kind: "item", legacy: "material" }, S]
   },
   {
     type: "harvest_crop",
     icon: "🌾",
-    params: [{ name: "crop", kind: "material", required: !0 }, R]
+    params: [{ name: "crop", kind: "material", required: !0 }, S]
   },
   {
     type: "fishing",
     icon: "🎣",
-    params: [{ name: "item", kind: "item", legacy: "fish_type" }, R]
+    params: [{ name: "item", kind: "item", legacy: "fish_type" }, S]
   },
   {
     type: "deliver_item",
     icon: "📦",
     params: [
       { name: "item", kind: "item", legacy: "material" },
-      R,
+      S,
       { name: "itemKey", kind: "text", advanced: !0 },
       { name: "npc", kind: "text", advanced: !0 },
       { name: "conversation", kind: "text", advanced: !0 },
@@ -643,8 +641,8 @@ const pt = [
       { name: "conversation", kind: "text" }
     ]
   },
-  { type: "kill_entity", icon: "⚔", params: [{ name: "entity_type", kind: "entity" }, R] },
-  { type: "breed_animal", icon: "♥", params: [{ name: "entity_type", kind: "entity" }, R] },
+  { type: "kill_entity", icon: "⚔", params: [{ name: "entity_type", kind: "entity" }, S] },
+  { type: "breed_animal", icon: "♥", params: [{ name: "entity_type", kind: "entity" }, S] },
   { type: "travel", icon: "➜", params: [{ name: "distance", kind: "int", required: !0 }] },
   {
     type: "execute_command",
@@ -943,7 +941,7 @@ function At({ projectId: e, documentId: t, document: i, item: n }) {
       d("back")
     ] }),
     /* @__PURE__ */ s(Lt, { ctx: q, group: a, index: g })
-  ] }) : /* @__PURE__ */ s("div", { className: "aq", children: /* @__PURE__ */ s(St, { ctx: q, group: a, onOpen: m }) });
+  ] }) : /* @__PURE__ */ s("div", { className: "aq", children: /* @__PURE__ */ s(Rt, { ctx: q, group: a, onOpen: m }) });
 }
 function N({
   label: e,
@@ -1025,14 +1023,14 @@ function O({
     }
   );
 }
-function Se(e) {
+function Re(e) {
   const t = /* @__PURE__ */ new Set();
   return e.map((i, n) => {
     const a = t.has(i) ? `${i}#${n}` : i;
     return t.add(i), a;
   });
 }
-function St({
+function Rt({
   ctx: e,
   group: t,
   onOpen: i
@@ -1116,15 +1114,7 @@ function St({
             ]
           }
         ) }),
-        q ? /* @__PURE__ */ s(N, { label: n("position"), children: /* @__PURE__ */ s(
-          "input",
-          {
-            className: "input",
-            value: typeof t.distribution.position == "string" ? t.distribution.position : "",
-            placeholder: "%msguilds_level%",
-            onChange: (p) => a((f) => _(f.distribution, "position", p.target.value || void 0))
-          }
-        ) }) : /* @__PURE__ */ s(
+        !q && /* @__PURE__ */ s(
           $,
           {
             label: n("amount"),
@@ -1337,7 +1327,7 @@ function St({
     /* @__PURE__ */ s($t, { ctx: e, group: t })
   ] });
 }
-function Rt({
+function St({
   ctx: e,
   value: t,
   onChange: i
@@ -1371,7 +1361,7 @@ function Rt({
     ] })
   ] });
 }
-function Re({
+function Se({
   ctx: e,
   title: t,
   hint: i,
@@ -1399,7 +1389,7 @@ function Re({
           }
         )
       ] }),
-      /* @__PURE__ */ s(Rt, { ctx: e, value: u[c], onChange: (v) => o(c, v) })
+      /* @__PURE__ */ s(St, { ctx: e, value: u[c], onChange: (v) => o(c, v) })
     ] }, c)),
     g.length > 0 && /* @__PURE__ */ y(
       "select",
@@ -1423,7 +1413,7 @@ function Re({
 function $t({ ctx: e, group: t }) {
   const { t: i, edit: n } = e;
   return /* @__PURE__ */ s(
-    Re,
+    Se,
     {
       ctx: e,
       title: i("hooks"),
@@ -1568,7 +1558,7 @@ function Lt({ ctx: e, group: t, index: i }) {
       /* @__PURE__ */ s(
         ae,
         {
-          ids: Se(r.stages.map((c) => c.key)),
+          ids: Re(r.stages.map((c) => c.key)),
           onMove: (c, v) => o((k) => de(k.stages, c, v)),
           className: "aq-stages",
           children: (c, v) => /* @__PURE__ */ s(
@@ -1586,7 +1576,7 @@ function Lt({ ctx: e, group: t, index: i }) {
       )
     ] }),
     /* @__PURE__ */ s(
-      Re,
+      Se,
       {
         ctx: e,
         title: n("questEvents"),
@@ -1660,7 +1650,7 @@ function Ot({
     /* @__PURE__ */ s(
       ae,
       {
-        ids: Se(i.objectives.map((g) => g.key)),
+        ids: Re(i.objectives.map((g) => g.key)),
         onMove: (g, c) => u((v) => de(v.objectives, g, c)),
         className: "aq-objectives",
         children: (g, c) => {

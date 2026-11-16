@@ -11,7 +11,7 @@ import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
-import com.github.ibanetchep.msquests.core.quest.config.group.LadderPositions;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
@@ -42,7 +42,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.OptionalInt;
 import java.util.Map;
 import java.util.UUID;
@@ -196,9 +195,6 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("duration", ModelFieldType.integer(), "Seconds"),
                         new DataSourceField("tier", ModelFieldType.string(), null),
                         new DataSourceField("tier_name", ModelFieldType.string(), null),
-                        new DataSourceField("ladder_index", ModelFieldType.integer(), "Step of a ladder group, from 0"),
-                        new DataSourceField("ladder_state", ModelFieldType.string(),
-                                "reached / current / locked on a ladder group, empty elsewhere"),
                         new DataSourceField("assigned", ModelFieldType.bool(),
                                 "Handed to the actor for the current period — filter on it "
                                         + "to show only the player's quests"),
@@ -435,27 +431,29 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             if (groupFilter != null && !groupFilter.equals(group.getKey())) continue;
             ActorQuestGroup actorGroup = actorGroupOf(actor, group);
             Function<QuestConfig, QuestStartResult> startCheck = startCheck(actor, group, player);
-            OptionalInt position = ladderPosition(group, actor);
+            OptionalInt current = ladderIndex(group, actor, player);
+            int index = 0;
             for (QuestConfig config : group.getOrderedQuests()) {
-                Map<String, Object> row = QuestRows.questRow(group, config, actorGroup, startCheck, translator);
-                if (position.isPresent()) {
-                    row.put("ladder_state", LadderPositions.state((int) row.get("ladder_index"), position.getAsInt())
-                            .name().toLowerCase(Locale.ROOT));
-                }
-                rows.add(row);
+                LadderSteps.State ladder = current.isPresent() ? LadderSteps.state(index, current.getAsInt()) : null;
+                rows.add(QuestRows.questRow(group, config, actorGroup, startCheck, ladder, translator));
+                index++;
             }
         }
         return rows;
     }
 
-    /** Where the actor stands on a ladder group, read live: a menu is right before the next check. */
-    private OptionalInt ladderPosition(QuestGroupConfig group, @Nullable QuestActor actor) {
-        if (actor == null || group.getDistributionStrategy() != QuestDistributionStrategy.LADDER) return OptionalInt.empty();
+    /**
+     * The current step of a ladder group for the actor, the group put in step first: a menu opened
+     * right after a level changed shows the new quest, already started. The viewer is who the
+     * steps' conditions are read for. Empty elsewhere, and in an editor preview (no viewer).
+     */
+    private OptionalInt ladderIndex(QuestGroupConfig group, @Nullable QuestActor actor, @Nullable Player viewer) {
+        if (actor == null || viewer == null || group.getDistributionStrategy() != QuestDistributionStrategy.LADDER) {
+            return OptionalInt.empty();
+        }
         if (!group.getActorType().equalsIgnoreCase(actor.getActorType())) return OptionalInt.empty();
-        String expression = group.getDistributionConfig().getPosition();
-        return expression != null
-                ? plugin.getQuestLifecycleService().getLadderPositions().position(actor, expression)
-                : OptionalInt.empty();
+        plugin.getQuestLifecycleService().syncLadder(actor, group, viewer.getUniqueId());
+        return plugin.getQuestLifecycleService().ladderIndex(actor, group, viewer.getUniqueId());
     }
 
     /**

@@ -18,8 +18,10 @@ import com.github.ibanetchep.msquests.core.quest.executor.AtomicQuestExecutor;
 import com.github.ibanetchep.msquests.core.platform.MSQuestsPlatform;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
-import com.github.ibanetchep.msquests.core.quest.config.group.LadderPositions;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
+import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.UUID;
 import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
@@ -49,7 +51,7 @@ public class QuestLifecycleService {
     private final RotationRepository rotationRepository;
     private final MSQuestsPlatform platform;
     private final ChainRunner chains;
-    private volatile LadderPositions ladderPositions = LadderPositions.NONE;
+    private volatile LadderSteps ladderSteps = LadderSteps.NONE;
 
     public QuestLifecycleService(
             EventDispatcher dispatcher,
@@ -174,7 +176,7 @@ public class QuestLifecycleService {
             chains.run(quest.getQuestConfig().getRewards(), ChainContext.of(quest));
             chains.run(groupConfig.getQuestCompleteActions(), ChainContext.of(quest));
             checkAllPeriodQuestsComplete(quest.getActor(), groupConfig);
-            // The rewards are what move a ladder's position: read it after them.
+            // The rewards are what make a step done: read the ladder after them.
             if (ladder) syncLadder(quest.getActor(), groupConfig);
         });
     }
@@ -190,32 +192,55 @@ public class QuestLifecycleService {
         });
     }
 
-    /** How the platform reads a ladder's position; {@link LadderPositions#NONE} until set. */
-    public void setLadderPositions(LadderPositions ladderPositions) {
-        this.ladderPositions = ladderPositions;
-    }
-
-    public LadderPositions getLadderPositions() {
-        return ladderPositions;
+    /** How the platform reads a ladder step's {@code completed_when}; {@link LadderSteps#NONE} until set. */
+    public void setLadderSteps(LadderSteps ladderSteps) {
+        this.ladderSteps = ladderSteps;
     }
 
     /**
-     * Puts a {@link QuestDistributionStrategy#LADDER} group in step with the actor's position:
-     * the quest at the position is the only one active. Another active step is dropped without
-     * counting as a failure, and a step completed before is offered again when the position
-     * comes back to it. Nothing changes while the position cannot be read.
+     * The index of a ladder's current step for the actor: the first one that is not done, the
+     * number of steps when all are. A step without {@code completed_when} is done once the actor
+     * completed it. Empty when the group is no ladder or a step cannot be read now.
      */
-    public void syncLadder(QuestActor actor, QuestGroupConfig groupConfig) {
-        if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.LADDER || !groupConfig.isActive()) return;
-        String expression = groupConfig.getDistributionConfig().getPosition();
+    public OptionalInt ladderIndex(QuestActor actor, QuestGroupConfig groupConfig, @Nullable UUID viewer) {
+        if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.LADDER) return OptionalInt.empty();
         ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
-        if (expression == null || actorGroup == null) return;
-        OptionalInt position = ladderPositions.position(actor, expression);
-        if (position.isEmpty()) return;
+        if (actorGroup == null) return OptionalInt.empty();
+        List<QuestConfig> steps = groupConfig.getOrderedQuests();
+        for (int i = 0; i < steps.size(); i++) {
+            QuestConfig step = steps.get(i);
+            boolean done;
+            if (step.getCompletedWhen().isEmpty()) {
+                done = actorGroup.getAllQuestsForKey(step.getKey()).stream()
+                        .anyMatch(quest -> quest.getStatus() == QuestStatus.COMPLETED);
+            } else {
+                Optional<Boolean> read = ladderSteps.done(actor, step, viewer);
+                if (read.isEmpty()) return OptionalInt.empty();
+                done = read.get();
+            }
+            if (!done) return OptionalInt.of(i);
+        }
+        return OptionalInt.of(steps.size());
+    }
+
+    public void syncLadder(QuestActor actor, QuestGroupConfig groupConfig) {
+        syncLadder(actor, groupConfig, null);
+    }
+
+    /**
+     * Puts a {@link QuestDistributionStrategy#LADDER} group in step with the actor: its current
+     * step ({@link #ladderIndex}) is the only quest active. Another active step is dropped without
+     * counting as a failure, and a step completed before is offered again when it becomes the
+     * current one. Nothing changes while the steps cannot be read.
+     */
+    public void syncLadder(QuestActor actor, QuestGroupConfig groupConfig, @Nullable UUID viewer) {
+        if (!groupConfig.isActive()) return;
+        OptionalInt index = ladderIndex(actor, groupConfig, viewer);
+        ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
+        if (index.isEmpty() || actorGroup == null) return;
 
         List<QuestConfig> steps = groupConfig.getOrderedQuests();
-        int index = Math.max(0, position.getAsInt());
-        QuestConfig current = index < steps.size() ? steps.get(index) : null;
+        QuestConfig current = index.getAsInt() < steps.size() ? steps.get(index.getAsInt()) : null;
 
         for (QuestConfig step : steps) {
             if (current != null && step.getKey().equals(current.getKey())) continue;
@@ -338,7 +363,7 @@ public class QuestLifecycleService {
             chains.run(groupConfig.getActorLoadActions(), ChainContext.of(actor, groupConfig));
 
             if (groupConfig.getDistributionStrategy() == QuestDistributionStrategy.LADDER) {
-                syncLadder(actor, groupConfig); // a ladder follows its position, whatever its triggers
+                syncLadder(actor, groupConfig); // a ladder follows its steps, whatever its triggers
             } else if (groupConfig.hasDistributionTrigger(DistributionTrigger.ACTOR_LOAD)) {
                 triggerDistribution(actor, groupConfig);
             }

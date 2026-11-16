@@ -56,7 +56,6 @@ public final class QuestGroupDocumentWriter {
             if (group.distribution().strategy() != null) {
                 distribution.put("strategy", group.distribution().strategy().toLowerCase(Locale.ROOT));
             }
-            putIfSet(distribution, "position", group.distribution().position());
             putIfSet(distribution, "amount", group.distribution().amount());
             if (group.distribution().triggers() != null) {
                 distribution.put("triggers", group.distribution().triggers().stream()
@@ -117,6 +116,9 @@ public final class QuestGroupDocumentWriter {
         }
         if (quest.requirements() != null && !quest.requirements().isEmpty()) {
             out.put("requirements", quest.requirements());
+        }
+        if (quest.completedWhen() != null && !quest.completedWhen().isEmpty()) {
+            out.put("completed_when", quest.completedWhen());
         }
         if (quest.giver() != null) {
             Map<String, Object> giver = new LinkedHashMap<>();

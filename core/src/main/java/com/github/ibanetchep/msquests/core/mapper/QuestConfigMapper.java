@@ -50,7 +50,8 @@ public class QuestConfigMapper {
                         entity.getStartActions().steps(),
                         entity.getObjectiveProgressActions().steps(),
                         entity.getObjectiveCompleteActions().steps()),
-                entity.getGiver()
+                entity.getGiver(),
+                entity.getCompletedWhen().isEmpty() ? null : entity.getCompletedWhen().conditions()
         );
     }
 
@@ -67,6 +68,7 @@ public class QuestConfigMapper {
             questConfig.setObjectiveCompleteActions(ActionChain.of(dto.hooks().objectiveComplete()));
         }
         questConfig.setRequirements(Conditions.of(dto.requirements()));
+        questConfig.setCompletedWhen(Conditions.of(dto.completedWhen()));
         questConfig.setGiver(dto.giver());
 
         for (QuestStageConfigDTO stageDto : dto.stages()) {

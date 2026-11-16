@@ -145,6 +145,7 @@ public class QuestConfigService {
         for (QuestConfig quest : group.getQuestConfigs().values()) {
             String path = group.getKey() + "/" + quest.getKey();
             warnInvalid(path + " requirements", quest.getRequirements());
+            warnInvalid(path + " completed_when", quest.getCompletedWhen());
             for (QuestStageConfig stage : quest.getStages().values()) {
                 for (QuestObjectiveConfig objective : stage.getObjectives().values()) {
                     warnInvalid(path + " objective " + objective.getKey() + " conditions", objective.getConditions());
