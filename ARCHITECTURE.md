@@ -466,7 +466,7 @@ In-memory storage with `ConcurrentHashMap` for thread safety:
 | `QuestRegistry` | `UUID` | `Quest` | All the active quests in memory |
 | `QuestActorRegistry` | `UUID` | `QuestActor` | Loaded actors (connected players + global) |
 | `PlayerProfileRegistry` | `UUID` | `PlayerProfile` | Connected player profiles |
-| `ActorTypeRegistry` | `String` (type name) | `Class<? extends QuestActor>` | Registered actor types |
+| `ActorTypeRegistry` | `String` (type name) | `Class<? extends QuestActor>` | Registered actor types; reported to the editor as the option list `quests:actor_types` (`MsQuestsArtisanModule.registerActorTypes`, Artisan API 1.4.0), again at each registration |
 
 ---
 

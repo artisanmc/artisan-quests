@@ -20,6 +20,7 @@ import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.ActorResolver;
 import net.artisanmc.modules.api.ArtisanAPI;
+import net.artisanmc.modules.api.options.OptionEntry;
 import net.artisanmc.modules.api.ArtisanModule;
 import net.artisanmc.modules.api.action.ActionDeclaration;
 import net.artisanmc.modules.api.command.CommandDeclaration;
@@ -83,6 +84,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     static final String QUESTS = "quests:quests";
     static final String ACTIVE = "quests:active";
     static final String NPC = "quests:npc";
+    /** Who may play a group, as the editor's group settings offer it: the registered actor types. */
+    static final String ACTOR_TYPES = "quests:actor_types";
 
     /**
      * The name a source had under the legacy prefix, kept as its alias so a menu written with
@@ -97,7 +100,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
     /** Built by {@code editor/} ({@code npm run build}); the SDK version its build prints. */
     static final String EDITOR_BUNDLE = "artisan-editor/ui.js";
-    static final String EDITOR_SDK = "1.20.0";
+    static final String EDITOR_SDK = "1.21.0";
 
     /** The example quests: raise {@link #TEMPLATE_VERSION} whenever its files change. */
     static final String TEMPLATE = "daily";
@@ -141,6 +144,17 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         return "msquests/v1";
     }
 
+    /**
+     * The actor types as an option list: the editor offers {@code guild} once MSGuilds registered
+     * it, without asking this server. A type registered later reports the list again.
+     */
+    private void registerActorTypes(ArtisanAPI api) {
+        var types = plugin.getActorTypeRegistry();
+        api.getOptionLists().declare(ACTOR_TYPES,
+                () -> types.orderedKeys().stream().map(OptionEntry::new).toList());
+        types.onChange(api.getOptionLists()::changed);
+    }
+
     @Override
     public void onEnable(ArtisanAPI api) {
         this.api = api;
@@ -159,6 +173,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
         registerPlaceholders(api);
         registerGameEvents(api);
+        registerActorTypes(api);
 
         // STATIC: the key-set is the loaded configuration, enumerable without a player,
         // so a menu can place "the daily group" on a specific slot. Only the per-actor
@@ -387,6 +402,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         if (api != null) {
             api.getPlaceholders().unregister(QuestPlaceholders.NAMESPACE);
         }
+        plugin.getActorTypeRegistry().onChange(null);
         this.api = null;
     }
 

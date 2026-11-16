@@ -7,6 +7,8 @@ sidebar:
 
 ## Unreleased
 
+- Requires Artisan API 1.4.0. The editor's "Who plays" lists the actor types registered on the server
+  (`guild` with MSGuilds), reported as the option list `quests:actor_types`.
 - A stage without a name reads `Stage 2` (its place in the quest) wherever its name shows: `%stage_name%`,
   the `quests:*` rows. The text is `placeholder.stage_default_name` in the language files.
 - Renamed from MSQuests to Artisan Quests: plugin `ArtisanQuests`, `/artisanquests`, `artisanquests.*`

@@ -1,5 +1,14 @@
 import { type T } from "./i18n";
-import { type Objective, type Quest, type Raw, type Text, asMap, freeKey, newUid } from "./model";
+import {
+  KIND,
+  type Objective,
+  type Quest,
+  type Raw,
+  type Text,
+  asMap,
+  freeKey,
+  newUid,
+} from "./model";
 import { missingParams, objectiveSubject, objectiveTarget } from "./objectives";
 import { typeLabel } from "./questBoard";
 
@@ -69,4 +78,30 @@ export function duplicateQuest(
   copy.description = copyText(quest.description);
   for (const [i, stage] of copy.stages.entries()) stage.title = copyText(quest.stages[i]!.title);
   return copy;
+}
+
+const BUILT_IN_ACTORS = ["player", "global"];
+/** Actor types of other plugins met since the editor opened: a choice left stays offered. */
+const metActors = new Set<string>();
+
+/**
+ * Who may play a group. `declared` is the server's own list (`quests:actor_types`, with the
+ * types other plugins registered): the group's current type joins it when the server does not
+ * know it, so it stays readable. Without it (a server older than option lists), the two built-in
+ * types and the ones the project's groups use or used.
+ */
+export function actorChoices(
+  project: unknown,
+  current: string,
+  declared?: readonly string[],
+): string[] {
+  if (declared && declared.length > 0)
+    return current && !declared.includes(current) ? [...declared, current] : [...declared];
+  const groups = (project as { documents?: Record<string, unknown> } | undefined)?.documents?.[KIND];
+  for (const g of Array.isArray(groups) ? groups : []) {
+    const type = (g as { actorType?: unknown }).actorType;
+    if (typeof type === "string" && type) metActors.add(type);
+  }
+  if (current) metActors.add(current);
+  return [...BUILT_IN_ACTORS, ...[...metActors].filter((a) => !BUILT_IN_ACTORS.includes(a)).sort()];
 }

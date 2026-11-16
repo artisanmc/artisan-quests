@@ -16,7 +16,7 @@ a player, to the whole server, or to a guild with ArtisanGuildQuests.
 |---|---|
 | Server | Paper, Folia or Spigot 1.21 or newer |
 | Java | 21 |
-| Artisan | API 1.0.0 or newer (Artisan 1.0.0) |
+| Artisan | API 1.4.0 or newer |
 | Optional | PlaceholderAPI (`%msquests_*%`), zMenu (the `MSQUESTS_QUEST_GROUP` button) |
 
 ## Where to go next
