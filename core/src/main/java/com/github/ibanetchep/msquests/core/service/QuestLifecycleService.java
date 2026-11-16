@@ -167,8 +167,8 @@ public class QuestLifecycleService {
 
         QuestGroupConfig groupConfig = quest.getQuestGroup();
 
-        boolean ladder = groupConfig.getDistributionStrategy() == QuestDistributionStrategy.LADDER;
-        if (!ladder && groupConfig.hasDistributionTrigger(DistributionTrigger.QUEST_COMPLETE)) {
+        boolean inOrder = groupConfig.getDistributionStrategy() == QuestDistributionStrategy.SEQUENTIAL;
+        if (!inOrder && groupConfig.hasDistributionTrigger(DistributionTrigger.QUEST_COMPLETE)) {
             triggerDistribution(quest.getActor(), groupConfig);
         }
 
@@ -177,7 +177,7 @@ public class QuestLifecycleService {
             chains.run(groupConfig.getQuestCompleteActions(), ChainContext.of(quest));
             checkAllPeriodQuestsComplete(quest.getActor(), groupConfig);
             // The rewards are what make a step done: read the ladder after them.
-            if (ladder) syncLadder(quest.getActor(), groupConfig);
+            if (inOrder) syncLadder(quest.getActor(), groupConfig);
         });
     }
 
@@ -200,10 +200,10 @@ public class QuestLifecycleService {
     /**
      * The index of a ladder's current step for the actor: the first one that is not done, the
      * number of steps when all are. A step without {@code completed_when} is done once the actor
-     * completed it. Empty when the group is no ladder or a step cannot be read now.
+     * started it and it ended. Empty when the group is not in list order or a step cannot be read now.
      */
     public OptionalInt ladderIndex(QuestActor actor, QuestGroupConfig groupConfig, @Nullable UUID viewer) {
-        if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.LADDER) return OptionalInt.empty();
+        if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.SEQUENTIAL) return OptionalInt.empty();
         ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
         if (actorGroup == null) return OptionalInt.empty();
         List<QuestConfig> steps = groupConfig.getOrderedQuests();
@@ -211,8 +211,8 @@ public class QuestLifecycleService {
             QuestConfig step = steps.get(i);
             boolean done;
             if (step.getCompletedWhen().isEmpty()) {
-                done = actorGroup.getAllQuestsForKey(step.getKey()).stream()
-                        .anyMatch(quest -> quest.getStatus() == QuestStatus.COMPLETED);
+                // Started once and no longer running: behind, however it ended.
+                done = actorGroup.hasStarted(step.getKey()) && !actorGroup.hasActive(step.getKey());
             } else {
                 Optional<Boolean> read = ladderSteps.done(actor, step, viewer);
                 if (read.isEmpty()) return OptionalInt.empty();
@@ -228,7 +228,7 @@ public class QuestLifecycleService {
     }
 
     /**
-     * Puts a {@link QuestDistributionStrategy#LADDER} group in step with the actor: its current
+     * Puts a {@link QuestDistributionStrategy#SEQUENTIAL} group in step with the actor: its current
      * step ({@link #ladderIndex}) is the only quest active. Another active step is dropped without
      * counting as a failure, and a step completed before is offered again when it becomes the
      * current one. Nothing changes while the steps cannot be read.
@@ -248,7 +248,7 @@ public class QuestLifecycleService {
             if (stale != null) drop(actorGroup, stale);
         }
         if (current != null && !actorGroup.hasActive(current.getKey())
-                && startQuest(actor, current, QuestDistributionStrategy.LADDER, null).isSuccess()) {
+                && startQuest(actor, current, QuestDistributionStrategy.SEQUENTIAL, null).isSuccess()) {
             chains.run(groupConfig.getQuestDistributionActions(), ChainContext.of(actor, groupConfig));
         }
     }
@@ -362,7 +362,7 @@ public class QuestLifecycleService {
 
             chains.run(groupConfig.getActorLoadActions(), ChainContext.of(actor, groupConfig));
 
-            if (groupConfig.getDistributionStrategy() == QuestDistributionStrategy.LADDER) {
+            if (groupConfig.getDistributionStrategy() == QuestDistributionStrategy.SEQUENTIAL) {
                 syncLadder(actor, groupConfig); // a ladder follows its steps, whatever its triggers
             } else if (groupConfig.hasDistributionTrigger(DistributionTrigger.ACTOR_LOAD)) {
                 triggerDistribution(actor, groupConfig);
@@ -435,7 +435,7 @@ public class QuestLifecycleService {
     public void triggerDistribution(QuestActor actor, QuestGroupConfig groupConfig) {
         DistributionConfig dc = groupConfig.getDistributionConfig();
         if (dc == null) return;
-        if (dc.getStrategy() == QuestDistributionStrategy.LADDER) {
+        if (dc.getStrategy() == QuestDistributionStrategy.SEQUENTIAL) {
             syncLadder(actor, groupConfig);
             return;
         }

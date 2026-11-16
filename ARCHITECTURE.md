@@ -388,7 +388,7 @@ QuestConfig         Quest              QuestStage           QuestObjective
                     (EXPIRED)    <--- duration/cron expiry
 ```
 
-1. **Distribution**: `QuestDistributionService` selects the candidate quests (SEQUENTIAL or RANDOM strategy with tiers). A LADDER group is not distributed but synchronised (`QuestLifecycleService.syncLadder`): the first quest whose `completed_when` does not hold (`LadderSteps`, Artisan conditions with the actor's values bound, `ConditionLadderSteps`) is the only active one, on actor load, after a completion's rewards, on the one-minute refresh and when `quests:quests` is read; `QuestRows` derives `status_key` from it
+1. **Distribution**: `QuestDistributionService` selects the candidate quests (RANDOM strategy with tiers). A SEQUENTIAL group (`ladder` in a file is the same) is not distributed but synchronised (`QuestLifecycleService.syncLadder`): the first quest not done, by its `completed_when` when it has one, else by its attempts (`LadderSteps`, Artisan conditions with the actor's values bound, `ConditionLadderSteps`) is the only active one, on actor load, after a completion's rewards, on the one-minute refresh and when `quests:quests` is read; `QuestRows` derives `status_key` from it
 2. **Start**: `QuestLifecycleService.startQuest()` validates the preconditions (`QuestStartResult`) and creates the instance
 3. **Progress**: Bukkit handlers detect game events -> `QuestProgressService.progressObjective()` with batching
 4. **Objective completion**: When `progress >= target`, the objective is completed, the objective actions run

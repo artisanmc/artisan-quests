@@ -448,7 +448,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
      * steps' conditions are read for. Empty elsewhere, and in an editor preview (no viewer).
      */
     private OptionalInt ladderIndex(QuestGroupConfig group, @Nullable QuestActor actor, @Nullable Player viewer) {
-        if (actor == null || viewer == null || group.getDistributionStrategy() != QuestDistributionStrategy.LADDER) {
+        if (actor == null || viewer == null || group.getDistributionStrategy() != QuestDistributionStrategy.SEQUENTIAL) {
             return OptionalInt.empty();
         }
         if (!group.getActorType().equalsIgnoreCase(actor.getActorType())) return OptionalInt.empty();

@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Whether a step of a {@link QuestDistributionStrategy#LADDER} group is done for an actor: its
+ * Whether a step of a {@link QuestDistributionStrategy#SEQUENTIAL} group is done for an actor: its
  * {@code completed_when} conditions, the state the quest aims at ({@code guild_level >= 2}). The
  * current quest of a ladder is the first step that is not done.
  */

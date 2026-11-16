@@ -60,8 +60,8 @@ class QuestLadderTest {
     @BeforeEach
     void setUp() {
         group = new QuestGroupConfig.Builder("guild_levels", "Levels", "", "guild")
-                .maxActive(1)
-                .distributionConfig(new DistributionConfig(QuestDistributionStrategy.LADDER, 1, Set.of()))
+                .maxActive(1).maxPerPeriod(null)
+                .distributionConfig(new DistributionConfig(QuestDistributionStrategy.SEQUENTIAL, 1, Set.of()))
                 .build();
         for (int i = 0; i < KEYS.size(); i++) {
             QuestConfig step = new QuestConfig(KEYS.get(i), KEYS.get(i), "", 0L);
@@ -176,6 +176,27 @@ class QuestLadderTest {
         level.set(1);
 
         assertEquals(OptionalInt.of(1), service.ladderIndex(actor, group, null));
+    }
+
+    @Test
+    void withoutConditionsTheQuestsFollowEachOtherAsTheyEnd() {
+        for (String key : KEYS) group.getQuestConfigs().get(key).setCompletedWhen(Conditions.NONE);
+
+        service.syncLadder(actor, group);
+        assertTrue(ladder().hasActive("level_01"));
+
+        ladder().getActiveQuestByKey("level_01").setStatus(QuestStatus.COMPLETED);
+        service.syncLadder(actor, group);
+
+        assertTrue(ladder().hasActive("level_02"));
+        assertEquals(1, ladder().getInProgressCount());
+    }
+
+    @Test
+    void ladderInAFileIsTheSameStrategy() {
+        assertEquals(QuestDistributionStrategy.SEQUENTIAL, QuestDistributionStrategy.parse("ladder"));
+        assertEquals(QuestDistributionStrategy.SEQUENTIAL, QuestDistributionStrategy.parse("Sequential"));
+        assertEquals(QuestDistributionStrategy.RANDOM, QuestDistributionStrategy.parse("random"));
     }
 
     @Test
