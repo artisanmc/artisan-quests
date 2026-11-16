@@ -1,6 +1,6 @@
 # MSQuests - messages en français (format MiniMessage).
 # Les %placeholders% sont remplacés avant l’interprétation MiniMessage.
-file_version: 1
+file_version: 2
 
 quest_admin:
   # /msquests reload (aucun placeholder)
