@@ -7,6 +7,8 @@ sidebar:
 
 ## Unreleased
 
+- A stage without a name reads `Stage 2` (its place in the quest) wherever its name shows: `%stage_name%`,
+  the `quests:*` rows. The text is `placeholder.stage_default_name` in the language files.
 - Renamed from MSQuests to Artisan Quests: plugin `ArtisanQuests`, `/artisanquests`, `artisanquests.*`
   permissions. The former names keep working.
 - Requires Artisan API 1.0.0 (Artisan 1.0.0). Runs on Paper, Folia and Spigot.

@@ -120,6 +120,8 @@ placeholder:
   quest: '%quest_status_prefix%%quest_name%%quest_status_suffix%'
   # %stage_name%, %stage_key%
   stage: '%stage_name%'
+  # Une étape à laquelle la quête ne donne pas de nom : %stage_number%
+  stage_default_name: 'Étape %stage_number%'
   # Placeholders d’objectif
   objective: '%objective_status_prefix%%objective_name%%objective_status_suffix% <gray>%objective_progress%/%objective_target%</gray>'
 

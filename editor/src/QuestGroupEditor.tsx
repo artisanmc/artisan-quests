@@ -1217,19 +1217,15 @@ function QuestView({
         <section className="aq-card">
           <div className="aq-quest-head">
             <div className="aq-quest-name">
-              <TextField ctx={ctx} bare label={t("title")} node={quest.title} placeholder={t("title")} />
+              <TextField ctx={ctx} label={t("questName")} node={quest.title} />
             </div>
-            <div className="aq-quest-desc">
-              <TextField
-                ctx={ctx}
-                bare
-                multiline
-                rows={2}
-                label={t("description")}
-                node={quest.description}
-                placeholder={t("description")}
-              />
-            </div>
+            <TextField
+              ctx={ctx}
+              multiline
+              rows={2}
+              label={t("questDescription")}
+              node={quest.description}
+            />
           </div>
           <button
             type="button"
@@ -1453,14 +1449,14 @@ function StageCard({
     <div className="aq-card aq-stage">
       <div className="aq-stage-head">
         {handle}
-        <span className="aq-n is-brand">{si + 1}</span>
+        <span className="aq-eyebrow aq-stage-label">{t("stage", { n: si + 1 })}</span>
         <div className="aq-stage-title">
           <TextField
             ctx={ctx}
             bare
-            label={t("stage", { n: si + 1 })}
+            label={t("stageName")}
             node={stage.title}
-            placeholder={t("stageTitle")}
+            placeholder={t("stageNameDefault", { n: si + 1 })}
           />
         </div>
         {stage.objectives.length > 1 && (
@@ -1489,6 +1485,9 @@ function StageCard({
           }
         />
       </div>
+      <span className="aq-eyebrow">
+        {t("objectives")} <span className="aq-count">{stage.objectives.length}</span>
+      </span>
       <SortableList
         ids={rowIds(stage.objectives.map((o) => o.key))}
         onMove={(from, to) => editStage((s) => move(s.objectives, from, to))}

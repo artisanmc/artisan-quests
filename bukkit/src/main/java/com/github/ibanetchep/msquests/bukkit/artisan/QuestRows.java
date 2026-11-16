@@ -214,7 +214,7 @@ public final class QuestRows {
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("key", stageConfig.getKey());
-            row.put("name", nullToEmpty(stageConfig.getName()));
+            row.put("name", QuestStage.displayName(stageConfig.getName(), index + 1, translator));
             row.put("flow", stageConfig.getFlow().name());
             row.put("index", index++);
             row.put("completed", stage != null && stage.isCompleted());
@@ -252,7 +252,7 @@ public final class QuestRows {
         row.put("tracked", trackedQuestId != null && trackedQuestId.equals(quest.getId()));
         row.put("stage_index", quest.getCurrentStageIndex());
         row.put("stage_count", quest.getStages().size());
-        row.put("stage_name", stage != null ? nullToEmpty(stage.getName()) : "");
+        row.put("stage_name", stage != null ? stage.getDisplayName(translator) : "");
         row.put("stage_flow", stage != null ? stage.getStageConfig().getFlow().name() : "");
         row.put("progress_ratio", quest.getProgressRatio());
         // What to do next, as in the catalog row: a journal names it without walking the tree.

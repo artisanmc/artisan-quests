@@ -1,6 +1,7 @@
 package com.github.ibanetchep.msquests.core.quest.actor;
 
 import com.github.ibanetchep.msquests.core.lang.PlaceholderProvider;
+import com.github.ibanetchep.msquests.core.lang.TranslationKey;
 import com.github.ibanetchep.msquests.core.lang.Translator;
 import com.github.ibanetchep.msquests.core.quest.config.QuestStageConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.Flow;
@@ -84,6 +85,18 @@ public class QuestStage implements PlaceholderProvider {
         return stageConfig.getName();
     }
 
+    /** The stage's name as a player reads it: its own, or "Stage 2" when the quest gives it none. */
+    public String getDisplayName(Translator translator) {
+        return displayName(stageConfig.getName(), quest.getStagesList().indexOf(this) + 1, translator);
+    }
+
+    /** A stage's own name, or the default one of its place in the quest ({@code number} from 1). */
+    public static String displayName(@Nullable String name, int number, Translator translator) {
+        if (name != null && !name.isBlank()) return name;
+        return translator.getRaw(TranslationKey.PLACEHOLDER_STAGE_DEFAULT_NAME)
+                .replace("%stage_number%", String.valueOf(number));
+    }
+
     public String getKey() {
         return this.stageConfig.getKey();
     }
@@ -102,7 +115,7 @@ public class QuestStage implements PlaceholderProvider {
     @Override
     public Map<String, String> getPlaceholders(Translator translator) {
         return Map.of(
-                "stage_name", stageConfig.getName() != null ? stageConfig.getName() : "",
+                "stage_name", getDisplayName(translator),
                 "stage_key", getKey()
         );
     }

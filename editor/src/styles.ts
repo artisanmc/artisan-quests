@@ -87,6 +87,8 @@ export const QUESTS_CSS = `
 .aq-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
 .aq-stage { gap: 8px; padding: 12px 14px; }
 .aq-stage-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.aq-stage-label { flex: none; color: var(--brand); }
+.aq-quest-name { font-weight: 600; }
 .aq .aq-stage-title { flex: 1 1 320px; min-width: 0; font-weight: 600; }
 .aq-objectives { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .aq-obj { border-radius: var(--r-sm); background: var(--surface-inset); border: 1px solid transparent; }
