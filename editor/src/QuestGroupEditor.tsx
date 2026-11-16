@@ -190,8 +190,12 @@ function Dots() {
   );
 }
 
-function Chip({ tone, children }: { tone?: "ok" | "warn"; children: ReactNode }) {
-  return <span className={`aq-chip${tone ? ` is-${tone}` : ""}`}>{children}</span>;
+function Chip({ tone, title, children }: { tone?: "ok" | "warn"; title?: string; children: ReactNode }) {
+  return (
+    <span className={`aq-chip${tone ? ` is-${tone}` : ""}`} title={title}>
+      {children}
+    </span>
+  );
 }
 
 /** One choice among a few, all visible: the buttons of a radio group. */
@@ -588,7 +592,7 @@ function GroupView({
                     <span className="aq-chips">
                       {questIncomplete(q) && <Chip tone="warn">{t("toComplete")}</Chip>}
                       {ordered && conditions.length > 0 && (
-                        <Chip tone="ok">
+                        <Chip title={t("completedWhenHint")}>
                           {t("completedWhen")}{" "}
                           {conditionsText(conditions) !== null ? (
                             <span className="aq-mono">{conditionsText(conditions)}</span>
@@ -1361,7 +1365,7 @@ function QuestView({
 
         {ordered && (
           <section className="aq-card aq-pad">
-            <span className="aq-h">{t("completedWhen")}</span>
+            <span className="aq-h" title={t("completedWhenHint")}>{t("completedWhen")}</span>
             <ConditionsEditor
               key={quest.uid}
               projectId={ctx.projectId}
