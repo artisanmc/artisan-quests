@@ -649,7 +649,27 @@ function GroupView({
 }
 
 function actorLabel(t: T, actorType: string): string {
-  return actorType === "player" || actorType === "global" ? t(`actor.${actorType}`) : actorType;
+  return actorType === "player" || actorType === "global" || actorType === "guild"
+    ? t(`actor.${actorType}`)
+    : actorType;
+}
+
+const BUILT_IN_ACTORS = ["player", "global"];
+/** Actor types of other plugins met since the editor opened: a choice left stays offered. */
+const metActors = new Set<string>();
+
+/**
+ * Who may play a group: the two built-in types, then the types other plugins add (`guild`)
+ * that the project's groups use or used. The editor cannot ask the server for its registry.
+ */
+export function actorChoices(project: unknown, current: string): string[] {
+  const groups = (project as { documents?: Record<string, unknown> } | undefined)?.documents?.[KIND];
+  for (const g of Array.isArray(groups) ? groups : []) {
+    const type = (g as { actorType?: unknown }).actorType;
+    if (typeof type === "string" && type) metActors.add(type);
+  }
+  if (current) metActors.add(current);
+  return [...BUILT_IN_ACTORS, ...[...metActors].filter((a) => !BUILT_IN_ACTORS.includes(a)).sort()];
 }
 
 /** The three ways a group hands its quests out; `sequential` and `ladder` are both "in order". */
@@ -686,9 +706,7 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
     ? (group.distribution.triggers as string[])
     : [];
   const perTier = (group.distribution.tiers ?? {}) as Record<string, unknown>;
-  const actors = ["player", "global"].includes(group.actorType)
-    ? ["player", "global"]
-    : ["player", "global", group.actorType];
+  const actors = actorChoices(project, group.actorType);
 
   return (
     <div className="aq-settings">
