@@ -13,7 +13,10 @@ import org.jetbrains.annotations.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Talk to an NPC: {@code npc}, and the {@code conversation} it plays (none: the click is enough). */
+/**
+ * Talk to an NPC: {@code npc}, and the {@code conversation} it plays, or the {@code line} it says
+ * (neither: the click is enough).
+ */
 @ObjectiveType(ObjectiveTypes.TALK_NPC)
 @AtLeastOneOfFields({"npc"})
 public class TalkNpcObjectiveConfig extends QuestObjectiveConfig implements NpcBound {
@@ -24,10 +27,14 @@ public class TalkNpcObjectiveConfig extends QuestObjectiveConfig implements NpcB
     @ConfigField(name = "conversation")
     private final @Nullable String conversation;
 
+    /** A text or {@code {lang: text}}: no {@code @ConfigField}, whose schema only knows strings. */
+    private final @Nullable Object line;
+
     public TalkNpcObjectiveConfig(QuestObjectiveConfigDTO dto) {
         super(dto);
         npc = NpcBound.text(dto.params().get("npc"));
         conversation = NpcBound.text(dto.params().get("conversation"));
+        line = NpcBound.line(dto.params().get("line"));
     }
 
     @Override
@@ -35,6 +42,7 @@ public class TalkNpcObjectiveConfig extends QuestObjectiveConfig implements NpcB
         Map<String, Object> params = new LinkedHashMap<>();
         if (npc != null) params.put("npc", npc);
         if (conversation != null) params.put("conversation", conversation);
+        if (line != null) params.put("line", line);
         return new QuestObjectiveConfigDTO(getKey(), getType(), params);
     }
 
@@ -46,6 +54,11 @@ public class TalkNpcObjectiveConfig extends QuestObjectiveConfig implements NpcB
     @Override
     public @Nullable String getConversation() {
         return conversation;
+    }
+
+    @Override
+    public @Nullable Object getLine() {
+        return line;
     }
 
     @Override

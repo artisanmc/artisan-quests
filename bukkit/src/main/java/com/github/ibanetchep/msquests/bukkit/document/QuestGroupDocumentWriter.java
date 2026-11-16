@@ -124,6 +124,7 @@ public final class QuestGroupDocumentWriter {
             Map<String, Object> giver = new LinkedHashMap<>();
             giver.put("npc", quest.giver().npc());
             putIfSet(giver, "conversation", quest.giver().conversation());
+            if (quest.giver().line() != null) giver.put("line", quest.giver().line());
             out.put("giver", giver);
         }
 

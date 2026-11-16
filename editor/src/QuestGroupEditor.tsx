@@ -70,6 +70,8 @@ import {
 import { isOrdered, objectiveLine, plainText, typeLabel } from "./questBoard";
 import {
   completedWhen,
+  lineValues,
+  withLine,
   conditionsText,
   duplicateQuest,
   objectiveSentence,
@@ -289,6 +291,46 @@ function TextField({
         />
       )}
     />
+  );
+}
+
+/**
+ * What an NPC says, written where it is said (a giver, a `talk_npc`, a delivery): one text per
+ * language, kept in the quest itself and not in the project's translations.
+ */
+function LineField({
+  ctx,
+  label,
+  value,
+  onChange,
+}: {
+  ctx: Ctx;
+  label: string;
+  value: unknown;
+  onChange: (next: Record<string, string> | undefined) => void;
+}) {
+  const langs = projectLangs(ctx.project);
+  const defaultLang = langs[0] ?? ctx.lang;
+  return (
+    <span title={ctx.t("lineHint")} className="aq-grow">
+      <LocalizedField
+        className="aq-field"
+        label={label}
+        langs={langs}
+        activeLang={ctx.lang}
+        defaultLang={defaultLang}
+        values={lineValues(value, defaultLang)}
+        onChange={(lang, text) => onChange(withLine(value, defaultLang, lang, text))}
+        renderEditor={(e) => (
+          <MiniMessageInput
+            value={e.value}
+            onChange={e.onChange}
+            placeholder={e.fallback}
+            aria-label={e.label}
+          />
+        )}
+      />
+    </span>
   );
 }
 
@@ -1325,6 +1367,20 @@ function QuestView({
                   </Field>
                 )}
               </div>
+              {giverNpc && (
+                <LineField
+                  ctx={ctx}
+                  label={t("giverLine")}
+                  value={giver.line}
+                  onChange={(next) =>
+                    editQuest((q) => {
+                      const g = { ...giver };
+                      setOrDelete(g, "line", next);
+                      q.rest.giver = g;
+                    })
+                  }
+                />
+              )}
               {giverNpc && distributed && <span className="aq-warn">{t("giverDistributed")}</span>}
             </div>
           )}
@@ -1493,6 +1549,7 @@ function StageCard({
           const objective = stage.objectives[oi]!;
           return (
             <ObjectiveRow
+              ctx={ctx}
               t={t}
               projectId={ctx.projectId}
               n={flow === "sequential" ? `${si + 1}.${oi + 1}` : ""}
@@ -1539,6 +1596,7 @@ function StageCard({
  * its form. Its key, generated from the type, waits under the form's own chevron.
  */
 function ObjectiveRow({
+  ctx,
   t,
   projectId,
   n,
@@ -1551,6 +1609,7 @@ function ObjectiveRow({
   onRename,
   onRemove,
 }: {
+  ctx: Ctx;
   t: T;
   projectId: string;
   n: string;
@@ -1583,6 +1642,14 @@ function ObjectiveRow({
         spec={p}
         params={objective.params}
         onChange={(recipe) => onChange((o) => recipe(o.params))}
+      />
+    ) : p.kind === "line" ? (
+      <LineField
+        key={p.name}
+        ctx={ctx}
+        label={t(`param.${p.name}` as Parameters<T>[0])}
+        value={objective.params[p.name]}
+        onChange={(v) => onChange((o) => setOrDelete(o.params, p.name, v))}
       />
     ) : (
       <ParamField

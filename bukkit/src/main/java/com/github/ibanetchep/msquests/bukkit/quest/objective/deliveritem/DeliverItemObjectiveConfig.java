@@ -39,12 +39,18 @@ public class DeliverItemObjectiveConfig extends QuestObjectiveConfig implements 
     @ConfigField(name = "missing")
     private final @Nullable String missing;
 
+    /** Said by the NPC instead of a conversation; texts or {@code {lang: text}}, outside the schema. */
+    private final @Nullable Object line;
+    private final @Nullable Object missingLine;
+
     public DeliverItemObjectiveConfig(QuestObjectiveConfigDTO dto) {
         super(dto);
         item = ItemTarget.read(dto.params(), "material");
         npc = NpcBound.text(dto.params().get("npc"));
         conversation = NpcBound.text(dto.params().get("conversation"));
         missing = NpcBound.text(dto.params().get("missing"));
+        line = NpcBound.line(dto.params().get("line"));
+        missingLine = NpcBound.line(dto.params().get("missing_line"));
 
         if(dto.params().containsKey("amount")) {
             amount = (int) dto.params().get("amount");
@@ -64,6 +70,8 @@ public class DeliverItemObjectiveConfig extends QuestObjectiveConfig implements 
         if (npc != null) params.put("npc", npc);
         if (conversation != null) params.put("conversation", conversation);
         if (missing != null) params.put("missing", missing);
+        if (line != null) params.put("line", line);
+        if (missingLine != null) params.put("missing_line", missingLine);
         return new QuestObjectiveConfigDTO(getKey(), getType(), params);
     }
 
@@ -80,6 +88,16 @@ public class DeliverItemObjectiveConfig extends QuestObjectiveConfig implements 
     @Override
     public @Nullable String getMissingConversation() {
         return missing;
+    }
+
+    @Override
+    public @Nullable Object getLine() {
+        return line;
+    }
+
+    @Override
+    public @Nullable Object getMissingLine() {
+        return missingLine;
     }
 
     public int getAmount() {

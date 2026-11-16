@@ -80,6 +80,17 @@ class DeliverItemObjectiveTest extends AbstractObjectiveHandlerTest {
     }
 
     @Test
+    void readsTheLinesTheNpcSays() {
+        DeliverItemObjectiveConfig config = objective(Map.of("material", "STONE", "amount", 10, "npc", "bruno",
+                "line", Map.of("fr", "Merci.", "en", "Thanks."), "missing_line", "Some are missing."), 0).getObjectiveConfig();
+
+        assertEquals(Map.of("fr", "Merci.", "en", "Thanks."), config.getLine());
+        assertEquals("Some are missing.", config.getMissingLine());
+        assertEquals("Some are missing.", config.toDTO().params().get("missing_line"));
+        assertEquals(Map.of("fr", "Merci.", "en", "Thanks."), config.toDTO().params().get("line"));
+    }
+
+    @Test
     void takesOnlyTheItemsMatchingTheSpec() {
         ItemStack named = new ItemStack(Material.STONE, 5);
         named.editMeta(meta -> meta.displayName(net.kyori.adventure.text.Component.text("Pierre bénie")));

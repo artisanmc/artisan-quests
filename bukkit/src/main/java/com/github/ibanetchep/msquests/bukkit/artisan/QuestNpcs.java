@@ -152,6 +152,8 @@ final class QuestNpcs {
         row.put("objective_name", name != null ? name : "");
         row.put("ready", ready);
         row.put("conversation", conversation != null ? conversation : "");
+        Object line = ready ? bound.getLine() : bound.getMissingLine();
+        row.put("line", line != null ? line : "");
         row.put("progress", objective.getProgress());
         row.put("target", objective.getTarget());
         return row;
@@ -165,6 +167,7 @@ final class QuestNpcs {
         row.put("objective_name", "");
         row.put("ready", true);
         row.put("conversation", giver.conversation() != null ? giver.conversation() : "");
+        row.put("line", giver.line() != null ? giver.line() : "");
         row.put("progress", 0);
         row.put("target", 0);
         return row;

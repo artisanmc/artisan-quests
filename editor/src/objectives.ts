@@ -4,7 +4,8 @@
  * its fields and shows them as plain text: a type an add-on registers is still editable.
  */
 
-export type ParamKind = "int" | "material" | "entity" | "text" | "item";
+/** `line`: what an NPC says, a text or one per language (`{fr: …, en: …}`). */
+export type ParamKind = "int" | "material" | "entity" | "text" | "item" | "line";
 
 export interface ParamSpec {
   name: string;
@@ -53,6 +54,8 @@ export const OBJECTIVE_TYPES: ObjectiveSpec[] = [
       amount,
       { name: "itemKey", kind: "text", advanced: true },
       { name: "npc", kind: "text", advanced: true },
+      { name: "line", kind: "line", advanced: true },
+      { name: "missing_line", kind: "line", advanced: true },
       { name: "conversation", kind: "text", advanced: true },
       { name: "missing", kind: "text", advanced: true },
     ],
@@ -62,7 +65,8 @@ export const OBJECTIVE_TYPES: ObjectiveSpec[] = [
     icon: "💬",
     params: [
       { name: "npc", kind: "text", required: true },
-      { name: "conversation", kind: "text" },
+      { name: "line", kind: "line" },
+      { name: "conversation", kind: "text", advanced: true },
     ],
   },
   { type: "kill_entity", icon: "⚔", params: [{ name: "entity_type", kind: "entity" }, amount] },
@@ -148,7 +152,7 @@ export function objectiveSubject(type: string, params: Record<string, unknown>):
       .join(" = ");
   }
   return spec.params
-    .filter((p) => p.kind !== "int")
+    .filter((p) => p.kind !== "int" && p.kind !== "line")
     .map((p) => (p.kind === "item" ? itemLabel(itemValue(params, p)) : params[p.name]))
     .filter((v) => typeof v === "string" && v !== "")
     .join(" = ");
