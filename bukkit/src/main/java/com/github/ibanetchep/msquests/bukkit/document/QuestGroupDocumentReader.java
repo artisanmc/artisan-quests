@@ -101,10 +101,16 @@ public final class QuestGroupDocumentReader {
         DistributionConfigDTO distributionDto = null;
         String strategy = string(distribution.get("strategy"), "distribution.strategy");
         if (strategy != null) {
+            String position = string(distribution.get("position"), "distribution.position");
+            if (strategy.equalsIgnoreCase("ladder") && (position == null || position.isBlank())) {
+                throw new DocumentException("distribution.position",
+                        "a ladder needs a position, such as \"%msguilds_level%\"");
+            }
             distributionDto = new DistributionConfigDTO(
                     strategy.toUpperCase(Locale.ROOT),
                     integer(distribution.get("amount"), "distribution.amount"),
-                    strings(distribution.get("triggers"), "distribution.triggers"));
+                    strings(distribution.get("triggers"), "distribution.triggers"),
+                    position);
         }
 
         String hooksKey = actionsKey(doc);

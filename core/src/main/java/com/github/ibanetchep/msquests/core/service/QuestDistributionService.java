@@ -53,7 +53,10 @@ public class QuestDistributionService {
             return QuestStartResult.ALREADY_COMPLETED;
         }
 
-        if (groupConfig.getMaxPerPeriod() != null && group.hasStartedInCurrentPeriod(questConfig.getKey())) {
+        // A ladder follows its position: a step done before is offered again when the position comes back.
+        boolean ladder = strategy == QuestDistributionStrategy.LADDER;
+
+        if (!ladder && groupConfig.getMaxPerPeriod() != null && group.hasStartedInCurrentPeriod(questConfig.getKey())) {
             return QuestStartResult.ALREADY_COMPLETED;
         }
 
@@ -64,7 +67,7 @@ public class QuestDistributionService {
         }
 
         Integer maxPerPeriod = groupConfig.getMaxPerPeriod();
-        if (maxPerPeriod != null) {
+        if (!ladder && maxPerPeriod != null) {
             int periodCount = group.currentPeriodQuestCount();
             if (periodCount >= maxPerPeriod) {
                 return QuestStartResult.PERIOD_LIMIT_REACHED;

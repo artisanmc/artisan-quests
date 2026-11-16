@@ -18,6 +18,8 @@ import com.github.ibanetchep.msquests.core.quest.executor.AtomicQuestExecutor;
 import com.github.ibanetchep.msquests.core.platform.MSQuestsPlatform;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderPositions;
+import java.util.OptionalInt;
 import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
@@ -47,6 +49,7 @@ public class QuestLifecycleService {
     private final RotationRepository rotationRepository;
     private final MSQuestsPlatform platform;
     private final ChainRunner chains;
+    private volatile LadderPositions ladderPositions = LadderPositions.NONE;
 
     public QuestLifecycleService(
             EventDispatcher dispatcher,
@@ -162,7 +165,8 @@ public class QuestLifecycleService {
 
         QuestGroupConfig groupConfig = quest.getQuestGroup();
 
-        if (groupConfig.hasDistributionTrigger(DistributionTrigger.QUEST_COMPLETE)) {
+        boolean ladder = groupConfig.getDistributionStrategy() == QuestDistributionStrategy.LADDER;
+        if (!ladder && groupConfig.hasDistributionTrigger(DistributionTrigger.QUEST_COMPLETE)) {
             triggerDistribution(quest.getActor(), groupConfig);
         }
 
@@ -170,7 +174,58 @@ public class QuestLifecycleService {
             chains.run(quest.getQuestConfig().getRewards(), ChainContext.of(quest));
             chains.run(groupConfig.getQuestCompleteActions(), ChainContext.of(quest));
             checkAllPeriodQuestsComplete(quest.getActor(), groupConfig);
+            // The rewards are what move a ladder's position: read it after them.
+            if (ladder) syncLadder(quest.getActor(), groupConfig);
         });
+    }
+
+    /** Takes a quest out of memory and deletes its row in the background: it never counted. */
+    private void drop(ActorQuestGroup actorGroup, Quest quest) {
+        actorGroup.removeQuest(quest);
+        quest.getActor().removeQuest(quest);
+        questRegistry.remove(quest);
+        persistenceService.deleteQuest(quest).exceptionally(e -> {
+            logger.log(Level.WARNING, "Failed to delete quest " + quest.getId(), e);
+            return null;
+        });
+    }
+
+    /** How the platform reads a ladder's position; {@link LadderPositions#NONE} until set. */
+    public void setLadderPositions(LadderPositions ladderPositions) {
+        this.ladderPositions = ladderPositions;
+    }
+
+    public LadderPositions getLadderPositions() {
+        return ladderPositions;
+    }
+
+    /**
+     * Puts a {@link QuestDistributionStrategy#LADDER} group in step with the actor's position:
+     * the quest at the position is the only one active. Another active step is dropped without
+     * counting as a failure, and a step completed before is offered again when the position
+     * comes back to it. Nothing changes while the position cannot be read.
+     */
+    public void syncLadder(QuestActor actor, QuestGroupConfig groupConfig) {
+        if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.LADDER || !groupConfig.isActive()) return;
+        String expression = groupConfig.getDistributionConfig().getPosition();
+        ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
+        if (expression == null || actorGroup == null) return;
+        OptionalInt position = ladderPositions.position(actor, expression);
+        if (position.isEmpty()) return;
+
+        List<QuestConfig> steps = groupConfig.getOrderedQuests();
+        int index = Math.max(0, position.getAsInt());
+        QuestConfig current = index < steps.size() ? steps.get(index) : null;
+
+        for (QuestConfig step : steps) {
+            if (current != null && step.getKey().equals(current.getKey())) continue;
+            Quest stale = actorGroup.getActiveQuestByKey(step.getKey());
+            if (stale != null) drop(actorGroup, stale);
+        }
+        if (current != null && !actorGroup.hasActive(current.getKey())
+                && startQuest(actor, current, QuestDistributionStrategy.LADDER, null).isSuccess()) {
+            chains.run(groupConfig.getQuestDistributionActions(), ChainContext.of(actor, groupConfig));
+        }
     }
 
     /**
@@ -233,13 +288,7 @@ public class QuestLifecycleService {
         // Delete old quest. The row goes away in the background: the quest is already out
         // of memory, and a rotation is a click on the player's thread, so it never waits
         // on the connection pool.
-        actorGroup.removeQuest(quest);
-        actor.removeQuest(quest);
-        questRegistry.remove(quest);
-        persistenceService.deleteQuest(quest).exceptionally(e -> {
-            logger.log(Level.WARNING, "Failed to delete rotated quest " + quest.getId(), e);
-            return null;
-        });
+        drop(actorGroup, quest);
 
         // Start new quest
         for (QuestConfig candidate : candidates) {
@@ -265,6 +314,15 @@ public class QuestLifecycleService {
         boolean expired = expireQuests(actor);
         if (expired) {
             fireActorLoadActions(actor);
+            return;
+        }
+        syncLadders(actor);
+    }
+
+    /** {@link #syncLadder} for every ladder group of the actor's type. */
+    public void syncLadders(QuestActor actor) {
+        for (QuestGroupConfig groupConfig : questConfigRegistry.getQuestGroupConfigs().values()) {
+            if (groupConfig.getActorType().equalsIgnoreCase(actor.getActorType())) syncLadder(actor, groupConfig);
         }
     }
 
@@ -279,7 +337,9 @@ public class QuestLifecycleService {
 
             chains.run(groupConfig.getActorLoadActions(), ChainContext.of(actor, groupConfig));
 
-            if (groupConfig.hasDistributionTrigger(DistributionTrigger.ACTOR_LOAD)) {
+            if (groupConfig.getDistributionStrategy() == QuestDistributionStrategy.LADDER) {
+                syncLadder(actor, groupConfig); // a ladder follows its position, whatever its triggers
+            } else if (groupConfig.hasDistributionTrigger(DistributionTrigger.ACTOR_LOAD)) {
                 triggerDistribution(actor, groupConfig);
             }
         }
@@ -350,6 +410,10 @@ public class QuestLifecycleService {
     public void triggerDistribution(QuestActor actor, QuestGroupConfig groupConfig) {
         DistributionConfig dc = groupConfig.getDistributionConfig();
         if (dc == null) return;
+        if (dc.getStrategy() == QuestDistributionStrategy.LADDER) {
+            syncLadder(actor, groupConfig);
+            return;
+        }
 
         int distributed = distributeQuests(actor, groupConfig, dc.getStrategy(), dc.getAmount());
         if (distributed > 0) {

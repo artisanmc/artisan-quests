@@ -13,4 +13,6 @@ sidebar:
 - `content_source: artisan`: quest groups as Documents of Artisan projects, edited in the editor, progress
   in `artisan_quests_*`; `/artisanquests migrate` converts `quests/*.yml`.
 - Rewards, hooks and requirements are Artisan action chains and conditions; `quests:*` actions.
+- `strategy: ladder`: the current quest of a rankup follows a placeholder (`position`), with
+  `ladder_state` in `quests:quests`.
 - Placeholders in Artisan's registry (`%quests_*%`), `%msquests_*%` kept in PlaceholderAPI.

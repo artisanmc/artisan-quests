@@ -168,6 +168,9 @@ public final class QuestRows {
         // one. Reading it from the config (not from an instance) is what lets a menu show
         // the objectives of a quest the player has never started.
         row.put("stages", stageRows(config, reference, translator));
+        // A ladder's step, read from the actor's position by the caller: "" elsewhere.
+        row.put("ladder_index", group.getOrderedQuests().indexOf(config));
+        row.put("ladder_state", "");
         return row;
     }
 

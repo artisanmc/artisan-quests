@@ -270,6 +270,9 @@ function GroupView({
   const cronWords = cron ? describeCron(cron, uiLang) : null;
   const timezone = typeof group.reset.timezone === "string" ? group.reset.timezone : "";
   const nextRun = cron && isCronShape(cron) ? nextRunLabel(cron, uiLang) : null;
+  // A ladder follows its position: no amount, no triggers, the quest at the position is the one.
+  const ladder =
+    typeof group.distribution.strategy === "string" && group.distribution.strategy.toLowerCase() === "ladder";
   const triggers = Array.isArray(group.distribution.triggers)
     ? (group.distribution.triggers as string[])
     : [];
@@ -370,21 +373,32 @@ function GroupView({
               onChange={(e) => edit((g) => setOrDelete(g.distribution, "strategy", e.target.value))}
             >
               <option value="">—</option>
-              {(["none", "sequential", "random"] as const).map((s) => (
+              {(["none", "sequential", "random", "ladder"] as const).map((s) => (
                 <option key={s} value={s}>
                   {t(`strategy.${s}`)}
                 </option>
               ))}
             </select>
           </Field>
-          <NumberField
-            label={t("amount")}
-            value={group.distribution.amount}
-            onChange={(v) => edit((g) => setOrDelete(g.distribution, "amount", v))}
-          />
+          {ladder ? (
+            <Field label={t("position")}>
+              <input
+                className="input"
+                value={typeof group.distribution.position === "string" ? group.distribution.position : ""}
+                placeholder="%msguilds_level%"
+                onChange={(e) => edit((g) => setOrDelete(g.distribution, "position", e.target.value || undefined))}
+              />
+            </Field>
+          ) : (
+            <NumberField
+              label={t("amount")}
+              value={group.distribution.amount}
+              onChange={(v) => edit((g) => setOrDelete(g.distribution, "amount", v))}
+            />
+          )}
         </div>
-        <span className="field-label">{t("triggers")}</span>
-        {TRIGGERS.map((trigger) => (
+        {!ladder && <span className="field-label">{t("triggers")}</span>}
+        {!ladder && TRIGGERS.map((trigger) => (
           <label key={trigger} className="aq-check">
             <input
               type="checkbox"

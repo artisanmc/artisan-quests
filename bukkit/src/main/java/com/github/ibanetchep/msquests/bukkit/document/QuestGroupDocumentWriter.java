@@ -56,6 +56,7 @@ public final class QuestGroupDocumentWriter {
             if (group.distribution().strategy() != null) {
                 distribution.put("strategy", group.distribution().strategy().toLowerCase(Locale.ROOT));
             }
+            putIfSet(distribution, "position", group.distribution().position());
             putIfSet(distribution, "amount", group.distribution().amount());
             if (group.distribution().triggers() != null) {
                 distribution.put("triggers", group.distribution().triggers().stream()

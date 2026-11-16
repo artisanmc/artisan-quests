@@ -11,7 +11,9 @@ import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderPositions;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
+import com.github.ibanetchep.msquests.bukkit.quest.PlaceholderLadderPositions;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
@@ -41,6 +43,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.OptionalInt;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -193,6 +197,9 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("duration", ModelFieldType.integer(), "Seconds"),
                         new DataSourceField("tier", ModelFieldType.string(), null),
                         new DataSourceField("tier_name", ModelFieldType.string(), null),
+                        new DataSourceField("ladder_index", ModelFieldType.integer(), "Step of a ladder group, from 0"),
+                        new DataSourceField("ladder_state", ModelFieldType.string(),
+                                "reached / current / locked on a ladder group, empty elsewhere"),
                         new DataSourceField("assigned", ModelFieldType.bool(),
                                 "Handed to the actor for the current period — filter on it "
                                         + "to show only the player's quests"),
@@ -429,11 +436,26 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             if (groupFilter != null && !groupFilter.equals(group.getKey())) continue;
             ActorQuestGroup actorGroup = actorGroupOf(actor, group);
             Function<QuestConfig, QuestStartResult> startCheck = startCheck(actor, group, player);
+            OptionalInt position = ladderPosition(group, player);
             for (QuestConfig config : group.getOrderedQuests()) {
-                rows.add(QuestRows.questRow(group, config, actorGroup, startCheck, translator));
+                Map<String, Object> row = QuestRows.questRow(group, config, actorGroup, startCheck, translator);
+                if (position.isPresent()) {
+                    row.put("ladder_state", LadderPositions.state((int) row.get("ladder_index"), position.getAsInt())
+                            .name().toLowerCase(Locale.ROOT));
+                }
+                rows.add(row);
             }
         }
         return rows;
+    }
+
+    /** Where the viewer stands on a ladder group, read live: a menu is right before the next check. */
+    private OptionalInt ladderPosition(QuestGroupConfig group, @Nullable Player player) {
+        if (player == null || group.getDistributionStrategy() != QuestDistributionStrategy.LADDER) return OptionalInt.empty();
+        String expression = group.getDistributionConfig().getPosition();
+        return expression != null && plugin.getQuestLifecycleService().getLadderPositions() instanceof PlaceholderLadderPositions positions
+                ? positions.position(player, expression)
+                : OptionalInt.empty();
     }
 
     /**

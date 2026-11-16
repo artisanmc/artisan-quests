@@ -49,7 +49,8 @@ public class QuestGroupMapper {
             distributionDto = new DistributionConfigDTO(
                     dc.getStrategy().name(),
                     dc.getAmount(),
-                    dc.getTriggers().stream().map(t -> t.name().toLowerCase()).toList()
+                    dc.getTriggers().stream().map(t -> t.name().toLowerCase()).toList(),
+                    dc.getPosition()
             );
         }
 
@@ -115,7 +116,7 @@ public class QuestGroupMapper {
             Set<DistributionTrigger> triggers = d.triggers() != null
                     ? d.triggers().stream().map(t -> DistributionTrigger.valueOf(t.toUpperCase())).collect(Collectors.toSet())
                     : Set.of();
-            distributionConfig = new DistributionConfig(strategy, amount, triggers);
+            distributionConfig = new DistributionConfig(strategy, amount, triggers, d.position());
         }
 
         QuestGroupConfig.Builder builder = new QuestGroupConfig.Builder(dto.key(), dto.name(), dto.description(), dto.actorType());

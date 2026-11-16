@@ -26,7 +26,7 @@ export function plainText(source: string): string {
 /** Whether the group hands its quests out in list order. */
 export function isOrdered(group: QuestGroup): boolean {
   const strategy = group.distribution?.strategy;
-  return typeof strategy === "string" && strategy.toLowerCase() === "sequential";
+  return typeof strategy === "string" && ["sequential", "ladder"].includes(strategy.toLowerCase());
 }
 
 /**
@@ -84,7 +84,7 @@ export function questBoardSummary(group: QuestGroup, lang: string): string {
       : "";
   const n = group.quests.length;
   const count = n === 1 ? t("questCountOne") : t("questCount", { count: n });
-  return ["none", "sequential", "random"].includes(strategy)
+  return ["none", "sequential", "random", "ladder"].includes(strategy)
     ? `${count} · ${t(`strategy.${strategy}` as Parameters<T>[0]).toLowerCase()}`
     : count;
 }
