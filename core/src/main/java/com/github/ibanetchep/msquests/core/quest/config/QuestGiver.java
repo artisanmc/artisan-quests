@@ -9,10 +9,19 @@ import org.jetbrains.annotations.Nullable;
  * @param npc the NPC's id, as the NPC module knows it
  * @param conversation the conversation that offers the quest, played before it starts; null to
  *        start it on the click
+ * @param line what the NPC says to offer the quest when no conversation is named: a text, or one
+ *        per language ({@code {fr: …, en: …}}); null for none
  */
-public record QuestGiver(String npc, @Nullable String conversation) {
+public record QuestGiver(String npc, @Nullable String conversation, @Nullable Object line) {
+
+    public QuestGiver(String npc, @Nullable String conversation) {
+        this(npc, conversation, null);
+    }
+
     public QuestGiver {
         if (npc == null || npc.isBlank()) throw new IllegalArgumentException("giver.npc cannot be empty");
         if (conversation != null && conversation.isBlank()) conversation = null;
+        if (line instanceof String text && text.isBlank()) line = null;
+        if (line instanceof java.util.Map<?, ?> byLang && byLang.isEmpty()) line = null;
     }
 }

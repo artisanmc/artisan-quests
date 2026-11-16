@@ -142,6 +142,30 @@ class QuestNpcsTest {
     }
 
     @Test
+    void aLineWrittenInTheQuestTravelsWithItsRow() {
+        QuestConfig offered = talkQuest("apples", "anna", null);
+        offered.setGiver(new QuestGiver("bruno", null, Map.of("fr", "Tu m'aides ?", "en", "Will you help?")));
+        assertEquals(Map.of("fr", "Tu m'aides ?", "en", "Will you help?"),
+                npcs.rows(playerId, player, "bruno").get(0).get("line"));
+
+        QuestConfig config = new QuestConfig("letters", "Quest letters", "", 0L);
+        config.setGroup(story);
+        QuestStageConfig stage = new QuestStageConfig("stage_1", "Stage 1", Flow.PARALLEL);
+        stage.addObjective(new TalkNpcObjectiveConfig(new QuestObjectiveConfigDTO("talk", "talk_npc",
+                Map.of("npc", "carl", "line", "Thanks for the letters."))));
+        config.addStage(stage);
+        story.addQuest(config);
+        start(config);
+
+        Map<String, Object> row = npcs.rows(playerId, player, "carl").get(0);
+        assertEquals("Thanks for the letters.", row.get("line"));
+        assertEquals("", row.get("conversation"));
+        // No line: an empty text, never null.
+        assertEquals("", npcs.rows(playerId, player, "anna").stream()
+                .filter(r -> "objective".equals(r.get("kind"))).findFirst().map(r -> r.get("line")).orElse(""));
+    }
+
+    @Test
     void objectivesComeBeforeOffers() {
         talkQuest("a_offer", "anna", null).setGiver(new QuestGiver("bruno", null));
         start(talkQuest("z_running", "bruno", null));

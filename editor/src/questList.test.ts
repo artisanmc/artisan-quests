@@ -9,6 +9,8 @@ import {
   questActionCount,
   questIncomplete,
   actorChoices,
+  lineValues,
+  withLine,
 } from "./questList";
 
 const t = translator("en");
@@ -112,5 +114,18 @@ describe("actorChoices", () => {
     const project = { documents: { quest_group: [{ actorType: "guild" }, { actorType: "player" }] } };
     expect(actorChoices(project, "global")).toEqual(["player", "global", "guild"]);
     expect(actorChoices(project, "global", [])).toEqual(["player", "global", "guild"]);
+  });
+});
+
+describe("an NPC's line", () => {
+  it("reads a bare text in the default language and a text per language as written", () => {
+    expect(lineValues("Merci.", "fr")).toEqual({ fr: "Merci." });
+    expect(lineValues({ fr: "Merci.", en: "Thanks.", de: "" }, "fr")).toEqual({ fr: "Merci.", en: "Thanks." });
+    expect(lineValues(undefined, "fr")).toEqual({});
+  });
+
+  it("is saved per language, and leaves the file once empty", () => {
+    expect(withLine("Merci.", "fr", "en", "Thanks.")).toEqual({ fr: "Merci.", en: "Thanks." });
+    expect(withLine({ fr: "Merci." }, "fr", "fr", "")).toBeUndefined();
   });
 });

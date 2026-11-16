@@ -7,6 +7,9 @@ sidebar:
 
 ## Unreleased
 
+- An NPC's line written in the quest: `line` on a giver, a `talk_npc` or a `deliver_item` (and `missing_line`),
+  a text or one per language. `quests:npc` rows carry it; ArtisanNpcs has it said by the NPC's speaker, so a
+  single sentence needs no conversation file. The editor has the field.
 - Requires Artisan API 1.4.0. The editor's "Who plays" lists the actor types registered on the server
   (`guild` with MSGuilds), reported as the option list `quests:actor_types`.
 - A stage without a name reads `Stage 2` (its place in the quest) wherever its name shows: `%stage_name%`,

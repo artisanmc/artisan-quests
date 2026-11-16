@@ -105,3 +105,29 @@ export function actorChoices(
   if (current) metActors.add(current);
   return [...BUILT_IN_ACTORS, ...[...metActors].filter((a) => !BUILT_IN_ACTORS.includes(a)).sort()];
 }
+
+/**
+ * What an NPC says, as a quest writes it (`line`, `missing_line`, `giver.line`): a text, or one
+ * per language. Read by language; a bare text answers `defaultLang`.
+ */
+export function lineValues(raw: unknown, defaultLang: string): Record<string, string> {
+  if (typeof raw === "string") return raw === "" ? {} : { [defaultLang]: raw };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [lang, text] of Object.entries(raw as Record<string, unknown>))
+    if (typeof text === "string" && text !== "") out[lang] = text;
+  return out;
+}
+
+/** The line with `lang` rewritten, as it is saved: one text per language, nothing when all are empty. */
+export function withLine(
+  raw: unknown,
+  defaultLang: string,
+  lang: string,
+  value: string,
+): Record<string, string> | undefined {
+  const next = lineValues(raw, defaultLang);
+  if (value === "") delete next[lang];
+  else next[lang] = value;
+  return Object.keys(next).length > 0 ? next : undefined;
+}

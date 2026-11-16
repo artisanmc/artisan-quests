@@ -531,17 +531,22 @@ An objective's **item** (`ItemTarget`) is an Artisan item spec: the fields of a 
 The quests hold no NPC: they name one by id, and an NPC module (`artisan-npcs`) decides what a
 click does. Three places name an NPC, all in the quest:
 
-- `giver: {npc, conversation?}` on a quest: the NPC that hands it out;
-- a `talk_npc` objective: `npc`, `conversation?`;
+- `giver: {npc, conversation?, line?}` on a quest: the NPC that hands it out;
+- a `talk_npc` objective: `npc`, `conversation?`, `line?`;
 - a `deliver_item` objective with `npc`, `conversation?` and `missing?` (the conversation played
-  while the player does not carry the whole amount). Without `npc` it stays delivered from a menu.
+  while the player does not carry the whole amount), `line?` and `missing_line?`. Without `npc` it
+  stays delivered from a menu.
+
+A `line` is what the NPC says, written in the quest: a text, or one per language
+(`{fr: …, en: …}`), kept as written. It spares a conversation file for a single sentence; the NPC
+module has it said by the NPC's speaker (`conversations:say`). A conversation named beside it wins.
 
 `quests:npc` (`QuestNpcs`, alias `msquests:npc`; parameters `npc?` and `player?`) answers for one player, in the order
 an NPC should consider them: the objectives in progress bound to an NPC (`kind: objective`, oldest
 quest first, objective conditions applied), then the quests a giver may start now (`kind: offer`,
 `canStartQuest`). Each row carries `npc`, `group`, `quest`, `objective`, `objective_type`, `ready`
-(false for a delivery whose items are not all carried) and the `conversation` to play (`missing`
-when not ready, empty when none). The NPC module starts an offer with `quests:start` and validates
+(false for a delivery whose items are not all carried), the `conversation` to play (`missing`
+when not ready, empty when none) and the `line` to say (`missing_line` when not ready, empty when none). The NPC module starts an offer with `quests:start` and validates
 an objective with `quests:advance`. A delivery to an NPC is all or nothing: the inventory is counted
 again at validation, nothing is taken while the amount is short.
 

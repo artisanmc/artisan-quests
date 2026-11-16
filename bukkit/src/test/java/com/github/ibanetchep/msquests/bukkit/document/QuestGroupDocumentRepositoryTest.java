@@ -136,6 +136,18 @@ class QuestGroupDocumentRepositoryTest {
     }
 
     @Test
+    void readsWhatTheGiverSays() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
+                    giver: { npc: bruno, line: { fr: "Tu m'aides ?", en: "Will you help?" } }
+                """));
+
+        var giver = load().groups().get("daily").quests().getFirst().giver();
+
+        assertEquals(java.util.Map.of("fr", "Tu m'aides ?", "en", "Will you help?"), giver.line());
+        assertNull(giver.conversation());
+    }
+
+    @Test
     void aGiverWithoutNpcIsReportedByPath() throws Exception {
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
                     giver: { conversation: bruno_offer }

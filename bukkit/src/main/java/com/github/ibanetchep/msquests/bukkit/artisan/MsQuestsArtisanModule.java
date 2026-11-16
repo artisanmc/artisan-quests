@@ -282,6 +282,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                                 "False while a delivery's items are not all carried"),
                         new DataSourceField("conversation", ModelFieldType.string(),
                                 "Conversation to play: the objective's or giver's, `missing` when not ready, or empty"),
+                        new DataSourceField("line", ModelFieldType.string(),
+                                "What the NPC says when no conversation is named: a text or {lang: text} (`missing_line` when not ready), or empty"),
                         new DataSourceField("progress", ModelFieldType.integer(), null),
                         new DataSourceField("target", ModelFieldType.integer(), null)),
                 Stability.DYNAMIC,

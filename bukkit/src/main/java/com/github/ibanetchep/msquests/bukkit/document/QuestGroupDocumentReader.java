@@ -238,13 +238,14 @@ public final class QuestGroupDocumentReader {
         }
     }
 
-    /** {@code giver: {npc, conversation}}: the NPC that hands the quest out, null when the quest names none. */
+    /** {@code giver: {npc, conversation, line}}: the NPC that hands the quest out, null when the quest names none. */
     private static @Nullable QuestGiver giver(@Nullable Object value, String path) {
         if (value == null) return null;
         Map<String, Object> giver = map(value, path);
         String npc = string(giver.get("npc"), path + ".npc");
         if (npc == null || npc.isBlank()) throw new DocumentException(path + ".npc", "a giver names its NPC");
-        return new QuestGiver(npc.trim(), string(giver.get("conversation"), path + ".conversation"));
+        return new QuestGiver(npc.trim(), string(giver.get("conversation"), path + ".conversation"),
+                com.github.ibanetchep.msquests.bukkit.quest.objective.NpcBound.line(giver.get("line")));
     }
 
     private static Flow flow(String flow, String path) {
