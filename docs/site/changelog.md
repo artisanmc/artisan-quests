@@ -16,4 +16,7 @@ sidebar:
 - `strategy: sequential` hands one quest at a time, the first not done, without `amount` nor
   `triggers`. A quest's `completed_when` makes it follow a state (a rankup); `status_key` in
   `quests:quests` follows the current quest.
+- Editor: a quest group opens on its quests, full width, with its rules folded in one card (reset
+  presets, one "In order" choice); a quest shows its stages as cards beside what the player sees, a
+  new objective picks its type first, and a quest can be duplicated.
 - Placeholders in Artisan's registry (`%quests_*%`), `%msquests_*%` kept in PlaceholderAPI.

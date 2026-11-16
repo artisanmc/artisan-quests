@@ -30,6 +30,9 @@ export const questGroupKind: DocumentKindContribution = {
   labels: LABELS,
   icon: QuestIcon,
   component: QuestGroupEditor,
+  // The view is a page of its own: its cards, and the quest beside what the player sees.
+  ownHeader: true,
+  wide: true,
   title: (doc, { project, lang }) => textValue(project, (doc as QuestGroup).title.key, lang),
   create: ({ id, projectId }) =>
     ({
