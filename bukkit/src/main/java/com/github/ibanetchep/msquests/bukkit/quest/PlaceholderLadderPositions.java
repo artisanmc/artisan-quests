@@ -7,27 +7,36 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.Nullable;
 
+import com.github.ibanetchep.msquests.core.lang.Translator;
+
+import java.util.Map;
 import java.util.OptionalInt;
+import java.util.function.Supplier;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
- * Reads a ladder's {@code position} with PlaceholderAPI, for an online member of the actor: the
- * player for a player actor, any member online for a guild. Without one, the position is unknown
+ * Reads a ladder's {@code position}. The actor's own placeholders come first ({@code %guild_level%}
+ * on a guild): they need nobody online. What is left goes through PlaceholderAPI for an online
+ * member of the actor (the player, any member of a guild); without one, the position is unknown
  * and the ladder waits for the next check.
  */
 public final class PlaceholderLadderPositions implements LadderPositions {
 
     private final Logger logger;
+    private final Supplier<Translator> translator;
     private final Set<String> warned = ConcurrentHashMap.newKeySet();
 
-    public PlaceholderLadderPositions(Logger logger) {
+    public PlaceholderLadderPositions(Logger logger, Supplier<Translator> translator) {
         this.logger = logger;
+        this.translator = translator;
     }
 
     @Override
     public OptionalInt position(QuestActor actor, String expression) {
+        String own = withActorPlaceholders(actor.getPlaceholders(translator.get()), expression);
+        if (!own.contains("%")) return checked(own, expression);
         Player member = null;
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (actor.isMember(player.getUniqueId())) {
@@ -35,14 +44,23 @@ public final class PlaceholderLadderPositions implements LadderPositions {
                 break;
             }
         }
-        return member != null ? position(member, expression) : OptionalInt.empty();
+        if (member == null) return OptionalInt.empty();
+        String resolved = Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null
+                ? PlaceholderAPI.setPlaceholders(member, own)
+                : own;
+        return checked(resolved, expression);
     }
 
-    /** The position as {@code viewer} reads it: what a menu shows. */
-    public OptionalInt position(Player viewer, String expression) {
-        String resolved = Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null
-                ? PlaceholderAPI.setPlaceholders(viewer, expression)
-                : expression;
+    /** {@code %key%} replaced by the actor's placeholder of that key; other text untouched. */
+    public static String withActorPlaceholders(Map<String, String> placeholders, String expression) {
+        String result = expression;
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            result = result.replace("%" + entry.getKey() + "%", entry.getValue());
+        }
+        return result;
+    }
+
+    private OptionalInt checked(String resolved, String expression) {
         OptionalInt position = parse(resolved);
         if (position.isEmpty() && warned.add(expression)) {
             logger.warning("Ladder position '" + expression + "' reads '" + resolved

@@ -13,7 +13,6 @@ import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.group.LadderPositions;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
-import com.github.ibanetchep.msquests.bukkit.quest.PlaceholderLadderPositions;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
@@ -436,7 +435,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             if (groupFilter != null && !groupFilter.equals(group.getKey())) continue;
             ActorQuestGroup actorGroup = actorGroupOf(actor, group);
             Function<QuestConfig, QuestStartResult> startCheck = startCheck(actor, group, player);
-            OptionalInt position = ladderPosition(group, player);
+            OptionalInt position = ladderPosition(group, actor);
             for (QuestConfig config : group.getOrderedQuests()) {
                 Map<String, Object> row = QuestRows.questRow(group, config, actorGroup, startCheck, translator);
                 if (position.isPresent()) {
@@ -449,12 +448,13 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         return rows;
     }
 
-    /** Where the viewer stands on a ladder group, read live: a menu is right before the next check. */
-    private OptionalInt ladderPosition(QuestGroupConfig group, @Nullable Player player) {
-        if (player == null || group.getDistributionStrategy() != QuestDistributionStrategy.LADDER) return OptionalInt.empty();
+    /** Where the actor stands on a ladder group, read live: a menu is right before the next check. */
+    private OptionalInt ladderPosition(QuestGroupConfig group, @Nullable QuestActor actor) {
+        if (actor == null || group.getDistributionStrategy() != QuestDistributionStrategy.LADDER) return OptionalInt.empty();
+        if (!group.getActorType().equalsIgnoreCase(actor.getActorType())) return OptionalInt.empty();
         String expression = group.getDistributionConfig().getPosition();
-        return expression != null && plugin.getQuestLifecycleService().getLadderPositions() instanceof PlaceholderLadderPositions positions
-                ? positions.position(player, expression)
+        return expression != null
+                ? plugin.getQuestLifecycleService().getLadderPositions().position(actor, expression)
                 : OptionalInt.empty();
     }
 
