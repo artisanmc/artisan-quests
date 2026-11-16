@@ -10,6 +10,7 @@ import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestObjectiveConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestStageConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestTierConfig;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjectiveStatus;
@@ -111,10 +112,33 @@ public final class QuestRows {
                                                @Nullable ActorQuestGroup actorGroup,
                                                @Nullable Function<QuestConfig, QuestStartResult> startCheck,
                                                Translator translator) {
+        return questRow(group, config, actorGroup, startCheck, null, translator);
+    }
+
+    /**
+     * @param ladder the step's state in a ladder group, null elsewhere. A ladder reads its steps
+     *               from their {@code completed_when}, not from the attempts stored: a step
+     *               passed is COMPLETED, one ahead is NOT_STARTED and locked, whatever was done
+     *               before a level was changed by hand.
+     */
+    public static Map<String, Object> questRow(QuestGroupConfig group,
+                                               QuestConfig config,
+                                               @Nullable ActorQuestGroup actorGroup,
+                                               @Nullable Function<QuestConfig, QuestStartResult> startCheck,
+                                               @Nullable LadderSteps.State ladder,
+                                               Translator translator) {
         String questKey = config.getKey();
         // "The actor's current attempt" is answered by the domain (ActorQuestGroup), not
         // re-derived here — quest menus and placeholders ask the same question.
         Quest reference = actorGroup != null ? actorGroup.getCurrentAttempt(questKey) : null;
+        if (ladder == LadderSteps.State.LOCKED) {
+            reference = null;
+        } else if (ladder == LadderSteps.State.CURRENT) {
+            reference = actorGroup != null ? actorGroup.getActiveQuestByKey(questKey) : null;
+        } else if (ladder == LadderSteps.State.REACHED && reference != null
+                && reference.getStatus() != QuestStatus.COMPLETED) {
+            reference = null;
+        }
 
         Map<String, Object> row = new LinkedHashMap<>();
         // Quest keys are only unique within their group — compose so the Row key of a
@@ -139,15 +163,24 @@ public final class QuestRows {
         // `assigned_only`; a menu filters on it to show "my 6 daily quests" rather than
         // the whole catalogue. A plain boolean, because Artisan's menu filters compare
         // for equality — `status_key != NOT_STARTED` is not expressible there.
+        boolean reached = ladder == LadderSteps.State.REACHED;
         row.put("assigned", reference != null);
-        row.put("status_key", reference != null ? reference.getStatus().name() : NOT_STARTED);
-        row.put("status", reference != null
+        row.put("status_key", reached ? QuestStatus.COMPLETED.name()
+                : reference != null ? reference.getStatus().name() : NOT_STARTED);
+        row.put("status", reached ? translator.getRaw(QuestStatus.COMPLETED)
+                : reference != null
                 ? translator.getRaw(reference.getStatus())
                 : translator.getRaw(TranslationKey.ZMENU_QUEST_STATUS_AVAILABLE));
 
         // Whether a new attempt may begin, and what blocks it — the axis a sequential
         // group (rankup: one quest at a time) needs to grey out what is not reachable yet.
         QuestStartResult start = startCheck != null ? startCheck.apply(config) : null;
+        if (ladder != null) {
+            // A ladder hands its current step out by itself: nothing in it is started by hand.
+            start = ladder == LadderSteps.State.LOCKED ? QuestStartResult.LOCKED
+                    : ladder == LadderSteps.State.REACHED ? QuestStartResult.ALREADY_COMPLETED
+                    : QuestStartResult.ALREADY_ACTIVE;
+        }
         row.put("can_start", start != null && start.isSuccess());
         row.put("start_blocker", start == null || start.isSuccess() ? "" : start.name());
         row.put("start_blocker_label", start == null || start.isSuccess()

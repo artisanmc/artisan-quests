@@ -65,6 +65,7 @@ quest:
       max_active_reached: '<red>Nombre maximum de quêtes actives atteint.</red>'
       period_limit_reached: '<red>Limite de quêtes atteinte pour cette période.</red>'
       conditions_not_met: '<red>Les conditions pour lancer cette quête ne sont pas remplies.</red>'
+      locked: "<red>Cette quête n'est pas encore accessible.</red>"
       cancelled_by_event: '<red>Le lancement de cette quête a été annulé.</red>'
   rotate:
     result:

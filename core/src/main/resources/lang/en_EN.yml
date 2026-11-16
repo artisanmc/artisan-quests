@@ -65,6 +65,7 @@ quest:
       max_active_reached: '<red>Maximum number of active quests reached.</red>'
       period_limit_reached: '<red>Quest limit reached for this period.</red>'
       conditions_not_met: '<red>The conditions to start this quest are not met.</red>'
+      locked: '<red>This quest is not reachable yet.</red>'
       cancelled_by_event: '<red>Starting this quest was cancelled.</red>'
   rotate:
     result:

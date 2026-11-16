@@ -17,6 +17,8 @@ public enum QuestStartResult implements Translatable {
     MAX_ACTIVE_REACHED,
     PERIOD_LIMIT_REACHED,
     CONDITIONS_NOT_MET,
+    /** A step of a ladder group ahead of the current one. */
+    LOCKED,
     CANCELLED_BY_EVENT;
 
     @Override

@@ -237,6 +237,7 @@ public class BukkitQuestsPlugin extends JavaPlugin implements MSQuestsPlatform {
         playerProfileService = new PlayerProfileService(getLogger(), playerProfileRepository, playerProfileRegistry, questActorRegistry);
         questDistributionService = new QuestDistributionService(conditionChecker);
         questLifecycleService = new QuestLifecycleService(eventDispatcher, questService, questFactory, questRegistry, questConfigRegistry, atomicQuestExecutor, questDistributionService, rotationRepository, this, chainRunner);
+        questLifecycleService.setLadderSteps(new com.github.ibanetchep.msquests.bukkit.quest.ConditionLadderSteps(artisanIntegration.getApi().getConditions(), this::getTranslator));
         questActorService = new QuestActorService(getLogger(), actorRepository, questActorRegistry, playerProfileRegistry, questService, questLifecycleService, this);
         questPlayerService = new QuestPlayerService(questActorService, playerProfileService);
         questProgressService = new QuestProgressService(questLifecycleService, questService, eventDispatcher, questRegistry, chainRunner);

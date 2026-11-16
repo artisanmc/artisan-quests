@@ -387,7 +387,7 @@ describe("the group's board node", () => {
     const rows = questGroupKind.board?.items?.(doc, { project: {}, lang: "fr" });
     expect(rows?.map((r) => r.marker)).toEqual(["1", "2"]);
     expect(questGroupKind.board?.summary?.(doc, { project: {}, lang: "fr" })).toBe(
-      "2 quêtes · dans l'ordre de la liste",
+      "2 quêtes · dans l'ordre",
     );
   });
 });

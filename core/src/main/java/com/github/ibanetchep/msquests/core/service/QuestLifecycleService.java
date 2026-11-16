@@ -18,6 +18,10 @@ import com.github.ibanetchep.msquests.core.quest.executor.AtomicQuestExecutor;
 import com.github.ibanetchep.msquests.core.platform.MSQuestsPlatform;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.player.PlayerProfile;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
+import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.UUID;
 import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
@@ -47,6 +51,7 @@ public class QuestLifecycleService {
     private final RotationRepository rotationRepository;
     private final MSQuestsPlatform platform;
     private final ChainRunner chains;
+    private volatile LadderSteps ladderSteps = LadderSteps.NONE;
 
     public QuestLifecycleService(
             EventDispatcher dispatcher,
@@ -162,7 +167,8 @@ public class QuestLifecycleService {
 
         QuestGroupConfig groupConfig = quest.getQuestGroup();
 
-        if (groupConfig.hasDistributionTrigger(DistributionTrigger.QUEST_COMPLETE)) {
+        boolean inOrder = groupConfig.getDistributionStrategy() == QuestDistributionStrategy.SEQUENTIAL;
+        if (!inOrder && groupConfig.hasDistributionTrigger(DistributionTrigger.QUEST_COMPLETE)) {
             triggerDistribution(quest.getActor(), groupConfig);
         }
 
@@ -170,7 +176,81 @@ public class QuestLifecycleService {
             chains.run(quest.getQuestConfig().getRewards(), ChainContext.of(quest));
             chains.run(groupConfig.getQuestCompleteActions(), ChainContext.of(quest));
             checkAllPeriodQuestsComplete(quest.getActor(), groupConfig);
+            // The rewards are what make a step done: read the ladder after them.
+            if (inOrder) syncLadder(quest.getActor(), groupConfig);
         });
+    }
+
+    /** Takes a quest out of memory and deletes its row in the background: it never counted. */
+    private void drop(ActorQuestGroup actorGroup, Quest quest) {
+        actorGroup.removeQuest(quest);
+        quest.getActor().removeQuest(quest);
+        questRegistry.remove(quest);
+        persistenceService.deleteQuest(quest).exceptionally(e -> {
+            logger.log(Level.WARNING, "Failed to delete quest " + quest.getId(), e);
+            return null;
+        });
+    }
+
+    /** How the platform reads a ladder step's {@code completed_when}; {@link LadderSteps#NONE} until set. */
+    public void setLadderSteps(LadderSteps ladderSteps) {
+        this.ladderSteps = ladderSteps;
+    }
+
+    /**
+     * The index of a ladder's current step for the actor: the first one that is not done, the
+     * number of steps when all are. A step without {@code completed_when} is done once the actor
+     * started it and it ended. Empty when the group is not in list order or a step cannot be read now.
+     */
+    public OptionalInt ladderIndex(QuestActor actor, QuestGroupConfig groupConfig, @Nullable UUID viewer) {
+        if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.SEQUENTIAL) return OptionalInt.empty();
+        ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
+        if (actorGroup == null) return OptionalInt.empty();
+        List<QuestConfig> steps = groupConfig.getOrderedQuests();
+        for (int i = 0; i < steps.size(); i++) {
+            QuestConfig step = steps.get(i);
+            boolean done;
+            if (step.getCompletedWhen().isEmpty()) {
+                // Started once and no longer running: behind, however it ended.
+                done = actorGroup.hasStarted(step.getKey()) && !actorGroup.hasActive(step.getKey());
+            } else {
+                Optional<Boolean> read = ladderSteps.done(actor, step, viewer);
+                if (read.isEmpty()) return OptionalInt.empty();
+                done = read.get();
+            }
+            if (!done) return OptionalInt.of(i);
+        }
+        return OptionalInt.of(steps.size());
+    }
+
+    public void syncLadder(QuestActor actor, QuestGroupConfig groupConfig) {
+        syncLadder(actor, groupConfig, null);
+    }
+
+    /**
+     * Puts a {@link QuestDistributionStrategy#SEQUENTIAL} group in step with the actor: its current
+     * step ({@link #ladderIndex}) is the only quest active. Another active step is dropped without
+     * counting as a failure, and a step completed before is offered again when it becomes the
+     * current one. Nothing changes while the steps cannot be read.
+     */
+    public void syncLadder(QuestActor actor, QuestGroupConfig groupConfig, @Nullable UUID viewer) {
+        if (!groupConfig.isActive()) return;
+        OptionalInt index = ladderIndex(actor, groupConfig, viewer);
+        ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
+        if (index.isEmpty() || actorGroup == null) return;
+
+        List<QuestConfig> steps = groupConfig.getOrderedQuests();
+        QuestConfig current = index.getAsInt() < steps.size() ? steps.get(index.getAsInt()) : null;
+
+        for (QuestConfig step : steps) {
+            if (current != null && step.getKey().equals(current.getKey())) continue;
+            Quest stale = actorGroup.getActiveQuestByKey(step.getKey());
+            if (stale != null) drop(actorGroup, stale);
+        }
+        if (current != null && !actorGroup.hasActive(current.getKey())
+                && startQuest(actor, current, QuestDistributionStrategy.SEQUENTIAL, null).isSuccess()) {
+            chains.run(groupConfig.getQuestDistributionActions(), ChainContext.of(actor, groupConfig));
+        }
     }
 
     /**
@@ -233,13 +313,7 @@ public class QuestLifecycleService {
         // Delete old quest. The row goes away in the background: the quest is already out
         // of memory, and a rotation is a click on the player's thread, so it never waits
         // on the connection pool.
-        actorGroup.removeQuest(quest);
-        actor.removeQuest(quest);
-        questRegistry.remove(quest);
-        persistenceService.deleteQuest(quest).exceptionally(e -> {
-            logger.log(Level.WARNING, "Failed to delete rotated quest " + quest.getId(), e);
-            return null;
-        });
+        drop(actorGroup, quest);
 
         // Start new quest
         for (QuestConfig candidate : candidates) {
@@ -265,6 +339,15 @@ public class QuestLifecycleService {
         boolean expired = expireQuests(actor);
         if (expired) {
             fireActorLoadActions(actor);
+            return;
+        }
+        syncLadders(actor);
+    }
+
+    /** {@link #syncLadder} for every ladder group of the actor's type. */
+    public void syncLadders(QuestActor actor) {
+        for (QuestGroupConfig groupConfig : questConfigRegistry.getQuestGroupConfigs().values()) {
+            if (groupConfig.getActorType().equalsIgnoreCase(actor.getActorType())) syncLadder(actor, groupConfig);
         }
     }
 
@@ -279,7 +362,9 @@ public class QuestLifecycleService {
 
             chains.run(groupConfig.getActorLoadActions(), ChainContext.of(actor, groupConfig));
 
-            if (groupConfig.hasDistributionTrigger(DistributionTrigger.ACTOR_LOAD)) {
+            if (groupConfig.getDistributionStrategy() == QuestDistributionStrategy.SEQUENTIAL) {
+                syncLadder(actor, groupConfig); // a ladder follows its steps, whatever its triggers
+            } else if (groupConfig.hasDistributionTrigger(DistributionTrigger.ACTOR_LOAD)) {
                 triggerDistribution(actor, groupConfig);
             }
         }
@@ -350,6 +435,10 @@ public class QuestLifecycleService {
     public void triggerDistribution(QuestActor actor, QuestGroupConfig groupConfig) {
         DistributionConfig dc = groupConfig.getDistributionConfig();
         if (dc == null) return;
+        if (dc.getStrategy() == QuestDistributionStrategy.SEQUENTIAL) {
+            syncLadder(actor, groupConfig);
+            return;
+        }
 
         int distributed = distributeQuests(actor, groupConfig, dc.getStrategy(), dc.getAmount());
         if (distributed > 0) {

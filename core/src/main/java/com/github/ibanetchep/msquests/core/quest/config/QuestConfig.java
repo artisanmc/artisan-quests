@@ -26,6 +26,7 @@ public class QuestConfig implements PlaceholderProvider {
     private String tier;
     private QuestGroupConfig group;
     private Conditions requirements = Conditions.NONE;
+    private Conditions completedWhen = Conditions.NONE;
     private @Nullable QuestGiver giver;
 
     public QuestConfig(String key, String name, String description, long duration) {
@@ -147,6 +148,15 @@ public class QuestConfig implements PlaceholderProvider {
 
     public void setRequirements(Conditions requirements) {
         this.requirements = requirements;
+    }
+
+    /** In a ladder group, the state this quest aims at: once it holds, the quest is done. */
+    public Conditions getCompletedWhen() {
+        return completedWhen;
+    }
+
+    public void setCompletedWhen(Conditions completedWhen) {
+        this.completedWhen = completedWhen;
     }
 
     /** The NPC that hands this quest out, null for a quest started another way (menu, distribution, action). */

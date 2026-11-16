@@ -117,6 +117,9 @@ public final class QuestGroupDocumentWriter {
         if (quest.requirements() != null && !quest.requirements().isEmpty()) {
             out.put("requirements", quest.requirements());
         }
+        if (quest.completedWhen() != null && !quest.completedWhen().isEmpty()) {
+            out.put("completed_when", quest.completedWhen());
+        }
         if (quest.giver() != null) {
             Map<String, Object> giver = new LinkedHashMap<>();
             giver.put("npc", quest.giver().npc());

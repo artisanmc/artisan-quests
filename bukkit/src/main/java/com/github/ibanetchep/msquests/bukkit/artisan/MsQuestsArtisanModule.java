@@ -11,6 +11,7 @@ import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
@@ -41,6 +42,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -95,7 +97,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
     /** Built by {@code editor/} ({@code npm run build}); the SDK version its build prints. */
     static final String EDITOR_BUNDLE = "artisan-editor/ui.js";
-    static final String EDITOR_SDK = "1.10.0";
+    static final String EDITOR_SDK = "1.20.0";
 
     /** The example quests: raise {@link #TEMPLATE_VERSION} whenever its files change. */
     static final String TEMPLATE = "daily";
@@ -429,11 +431,29 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             if (groupFilter != null && !groupFilter.equals(group.getKey())) continue;
             ActorQuestGroup actorGroup = actorGroupOf(actor, group);
             Function<QuestConfig, QuestStartResult> startCheck = startCheck(actor, group, player);
+            OptionalInt current = ladderIndex(group, actor, player);
+            int index = 0;
             for (QuestConfig config : group.getOrderedQuests()) {
-                rows.add(QuestRows.questRow(group, config, actorGroup, startCheck, translator));
+                LadderSteps.State ladder = current.isPresent() ? LadderSteps.state(index, current.getAsInt()) : null;
+                rows.add(QuestRows.questRow(group, config, actorGroup, startCheck, ladder, translator));
+                index++;
             }
         }
         return rows;
+    }
+
+    /**
+     * The current step of a ladder group for the actor, the group put in step first: a menu opened
+     * right after a level changed shows the new quest, already started. The viewer is who the
+     * steps' conditions are read for. Empty elsewhere, and in an editor preview (no viewer).
+     */
+    private OptionalInt ladderIndex(QuestGroupConfig group, @Nullable QuestActor actor, @Nullable Player viewer) {
+        if (actor == null || viewer == null || group.getDistributionStrategy() != QuestDistributionStrategy.SEQUENTIAL) {
+            return OptionalInt.empty();
+        }
+        if (!group.getActorType().equalsIgnoreCase(actor.getActorType())) return OptionalInt.empty();
+        plugin.getQuestLifecycleService().syncLadder(actor, group, viewer.getUniqueId());
+        return plugin.getQuestLifecycleService().ladderIndex(actor, group, viewer.getUniqueId());
     }
 
     /**

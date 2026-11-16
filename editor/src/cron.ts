@@ -133,3 +133,45 @@ export function nextCronRun(expr: string, from: Date): Date | null {
   }
   return null;
 }
+
+/**
+ * A period reset as the group's settings offer it: never, every day, week or month at a time,
+ * or a cron written by hand (`custom`: any expression the three shapes do not say).
+ */
+export type ResetPreset =
+  | { kind: "never" }
+  | { kind: "daily"; time: string }
+  | { kind: "weekly"; time: string; day: number }
+  | { kind: "monthly"; time: string; day: number }
+  | { kind: "custom" };
+
+/** The preset `expr` is: `0 4 * * 1` is weekly, Monday, 04:00. */
+export function readPreset(expr: string): ResetPreset {
+  const parts = expr.trim().split(/\s+/);
+  if (expr.trim() === "") return { kind: "never" };
+  if (parts.length !== 5) return { kind: "custom" };
+  const [min, hour, dom, mon, dow] = parts as [string, string, string, string, string];
+  if (mon !== "*" || !inRange(min, 0, 59) || !inRange(hour, 0, 23)) return { kind: "custom" };
+  const at = `${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
+  if (dom === "*" && dow === "*") return { kind: "daily", time: at };
+  if (dom === "*" && inRange(dow, 0, 7)) return { kind: "weekly", time: at, day: Number(dow) % 7 };
+  if (dow === "*" && inRange(dom, 1, 31)) return { kind: "monthly", time: at, day: Number(dom) };
+  return { kind: "custom" };
+}
+
+/** The cron of a preset; "" for never, null for `custom` (the expression is the user's). */
+export function presetCron(preset: ResetPreset): string | null {
+  if (preset.kind === "never") return "";
+  if (preset.kind === "custom") return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(preset.time);
+  const hour = m ? Math.min(23, Number(m[1])) : 4;
+  const min = m ? Math.min(59, Number(m[2])) : 0;
+  if (preset.kind === "daily") return `${min} ${hour} * * *`;
+  if (preset.kind === "weekly") return `${min} ${hour} * * ${preset.day}`;
+  return `${min} ${hour} ${Math.min(31, Math.max(1, preset.day))} * *`;
+}
+
+/** Sunday first, as a cron counts them. */
+export function weekdays(lang: string): string[] {
+  return DAYS[lang === "fr" ? "fr" : "en"]!;
+}

@@ -231,7 +231,8 @@ public final class QuestGroupDocumentReader {
                     quest.get("requirements") != null ? conditions(quest.get("requirements"), path + ".requirements") : null,
                     uid,
                     hooks,
-                    giver(quest.get("giver"), path + ".giver"));
+                    giver(quest.get("giver"), path + ".giver"),
+                    quest.get("completed_when") != null ? conditions(quest.get("completed_when"), path + ".completed_when") : null);
         } catch (IllegalArgumentException e) {
             throw new DocumentException(path, e.getMessage());
         }
