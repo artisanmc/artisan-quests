@@ -40,9 +40,17 @@ export function completedWhen(rest: Raw): unknown[] {
   return Array.isArray(value) ? value : value ? [value] : [];
 }
 
-/** The conditions in a few words when each is an expression, null when one is not. */
+/**
+ * The conditions in a few words when each is an expression (`guild_level >= 2`, as the file's
+ * `{expression: …}` or a bare string), null when one is of another kind.
+ */
 export function conditionsText(conditions: unknown[]): string | null {
-  return conditions.every((c) => typeof c === "string") ? conditions.join(" · ") : null;
+  const words = conditions.map((c) => {
+    if (typeof c === "string") return c;
+    const expression = c && typeof c === "object" ? (c as Raw).expression : undefined;
+    return typeof expression === "string" ? expression : null;
+  });
+  return words.every((w) => w !== null) ? words.join(" · ") : null;
 }
 
 /**

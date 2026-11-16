@@ -6,10 +6,12 @@ import {
   ItemInput,
   type ItemComparisonWire,
   MaterialInput,
+  McText,
   MiniMessageInput,
   SortableList,
   type TextWrite,
   injectModuleStyles,
+  mcWrap,
   newTextKey,
   selectDocumentItem,
   textValue,
@@ -551,9 +553,11 @@ function GroupView({
                       {ordered && conditions.length > 0 && (
                         <Chip tone="ok">
                           {t("completedWhen")}{" "}
-                          <span className="aq-mono">
-                            {conditionsText(conditions) ?? String(conditions.length)}
-                          </span>
+                          {conditionsText(conditions) !== null ? (
+                            <span className="aq-mono">{conditionsText(conditions)}</span>
+                          ) : (
+                            t("conditionCount", { count: conditions.length })
+                          )}
                         </Chip>
                       )}
                       {q.tier && (
@@ -1560,7 +1564,7 @@ function ObjectiveRow({
           <span className="aq-obj-text">
             {typeLabel(t, objective.type)}
             {target !== undefined && <strong> · {String(target)}</strong>}
-            {subject ? ` × ${subject}` : target !== undefined ? ` × ${t("any")}` : ""}
+            {subject ? ` × ${subject}` : target !== undefined && spec ? ` × ${t("any")}` : ""}
           </span>
           {problem && (
             <Chip tone="warn">
@@ -1738,31 +1742,50 @@ function ParamField({
   );
 }
 
+/** The tooltip's width in Minecraft pixels: lines wrap there, as lore does in game. */
+const PREVIEW_WIDTH = 170;
+const PREVIEW_GRAY = { color: "#aaaaaa", italic: false };
+const PREVIEW_WHITE = { color: "#ffffff", italic: false };
+
+/**
+ * The quest as an item tooltip draws it in game: its title, its description line by line with
+ * its colours, then each stage's objectives at 0. A menu may lay a quest out otherwise; this
+ * shows the texts as the client renders them.
+ */
 function Preview({ ctx, quest }: { ctx: Ctx; quest: Quest }) {
   const { t, project, lang } = ctx;
-  const line = (o: Objective) => objectiveLine(t, o);
-  const description = plainText(textValue(project, quest.description.key, lang));
+  const wrap = (source: string) =>
+    source.split("\n").flatMap((line) => (line === "" ? [""] : mcWrap(line, PREVIEW_WIDTH)));
+  const title = textValue(project, quest.title.key, lang) || quest.key;
+  const description = textValue(project, quest.description.key, lang);
+  const staged = quest.stages.length > 1;
   return (
     <div className="aq-preview">
-      <span className="aq-preview-title">
-        {plainText(textValue(project, quest.title.key, lang)) || quest.key}
-      </span>
-      {description && <span className="aq-preview-line">{description}</span>}
-      {quest.stages.map((s, si) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: stages are listed in order
-        <span key={si} className="aq-preview-stage">
-          {quest.stages.length > 1 && (
-            <span className="aq-preview-head">
-              {plainText(textValue(project, s.title.key, lang)) || t("stage", { n: si + 1 })}
-            </span>
-          )}
-          {s.objectives.map((o) => (
-            <span key={o.key} className="aq-preview-line">
-              • {line(o)}
-            </span>
-          ))}
-        </span>
-      ))}
+      <div className="aq-preview-frame">
+        <McText source={wrap(title).join("\n")} defaults={PREVIEW_WHITE} scale={2} />
+        {description && (
+          <McText source={wrap(description).join("\n")} defaults={PREVIEW_GRAY} scale={2} />
+        )}
+        {quest.stages.map((s, si) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: stages are listed in order
+          <div key={si} className="aq-preview-stage">
+            {staged && (
+              <McText
+                source={wrap(textValue(project, s.title.key, lang) || t("stage", { n: si + 1 })).join("\n")}
+                defaults={PREVIEW_WHITE}
+                scale={2}
+              />
+            )}
+            {s.objectives.length > 0 && (
+              <McText
+                source={s.objectives.flatMap((o) => wrap(`• ${objectiveLine(t, o)}`)).join("\n")}
+                defaults={PREVIEW_GRAY}
+                scale={2}
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

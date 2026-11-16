@@ -132,6 +132,7 @@ const en = {
   eventCount: "Events: {{count}}",
   tierCount: "Tiers: {{count}}",
   noTimeLimit: "No time limit",
+  conditionCount: "Conditions: {{count}}",
   givenBy: "Given by {{npc}}",
 };
 
@@ -270,6 +271,7 @@ const fr: Record<Key, string> = {
   eventCount: "Événements : {{count}}",
   tierCount: "Paliers : {{count}}",
   noTimeLimit: "Sans limite de temps",
+  conditionCount: "Conditions : {{count}}",
   givenBy: "Donnée par {{npc}}",
 };
 
