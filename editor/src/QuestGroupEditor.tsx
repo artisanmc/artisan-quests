@@ -4,6 +4,7 @@ import {
   ConditionsEditor,
   type DocumentEditorProps,
   ItemInput,
+  LocalizedField,
   type ItemComparisonWire,
   MaterialInput,
   McText,
@@ -13,6 +14,7 @@ import {
   injectModuleStyles,
   mcWrap,
   newTextKey,
+  projectLangs,
   selectDocumentItem,
   textValue,
   textValues,
@@ -236,18 +238,51 @@ function Field({
   );
 }
 
+/**
+ * A translatable text, the way Artisan edits every one (`LocalizedField`): the content
+ * language's text, the default language's as a placeholder when it has none, and the
+ * translations toggle unfolding every language in place.
+ */
 function TextField({
   ctx,
   label,
   node,
   multiline,
-}: { ctx: Ctx; label: string; node: Text; multiline?: boolean }) {
-  const value = textValue(ctx.project, node.key, ctx.lang);
-  const write = (v: string) => ctx.edit(() => {}, [{ key: node.key, lang: ctx.lang, value: v }]);
+  rows,
+  bare,
+  placeholder,
+}: {
+  ctx: Ctx;
+  label: string;
+  node: Text;
+  multiline?: boolean;
+  rows?: number;
+  /** No label row: the text is written where it reads (a quest's title, a stage's). */
+  bare?: boolean;
+  placeholder?: string;
+}) {
+  const langs = projectLangs(ctx.project);
   return (
-    <Field label={`${label} · ${ctx.lang}`}>
-      <MiniMessageInput value={value} onChange={write} multiline={multiline} aria-label={label} />
-    </Field>
+    <LocalizedField
+      className="aq-field"
+      label={label}
+      langs={langs}
+      activeLang={ctx.lang}
+      defaultLang={langs[0] ?? ctx.lang}
+      values={textValues(ctx.project, node.key)}
+      onChange={(lang, value) => ctx.edit(() => {}, [{ key: node.key, lang, value }])}
+      inline={bare}
+      renderEditor={(e) => (
+        <MiniMessageInput
+          value={e.value}
+          onChange={e.onChange}
+          placeholder={e.fallback ?? placeholder}
+          multiline={multiline}
+          rows={multiline ? rows : undefined}
+          aria-label={e.label}
+        />
+      )}
+    />
   );
 }
 
@@ -793,7 +828,8 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
           </Button>
         </div>
         {group.tiers.map((tier, i) => (
-          <div key={tier.key} className="aq-row">
+          <div key={tier.key} className="aq-tier">
+            <TextField ctx={ctx} label={t("title")} node={tier.title} />
             <Field label={t("tierKey")}>
               <input
                 className="input aq-mono"
@@ -817,7 +853,6 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
                 }}
               />
             </Field>
-            <TextField ctx={ctx} label={t("title")} node={tier.title} />
             {!ordered && (
               <NumberField
                 label={t("perTier")}
@@ -1164,21 +1199,17 @@ function QuestView({
         <section className="aq-card">
           <div className="aq-quest-head">
             <div className="aq-quest-name">
-              <MiniMessageInput
-                value={textValue(project, quest.title.key, lang)}
-                placeholder={t("title")}
-                aria-label={t("title")}
-                onChange={(value) => edit(() => {}, [{ key: quest.title.key, lang, value }])}
-              />
+              <TextField ctx={ctx} bare label={t("title")} node={quest.title} placeholder={t("title")} />
             </div>
             <div className="aq-quest-desc">
-              <MiniMessageInput
-                value={textValue(project, quest.description.key, lang)}
-                placeholder={t("description")}
-                aria-label={t("description")}
+              <TextField
+                ctx={ctx}
+                bare
                 multiline
                 rows={2}
-                onChange={(value) => edit(() => {}, [{ key: quest.description.key, lang, value }])}
+                label={t("description")}
+                node={quest.description}
+                placeholder={t("description")}
               />
             </div>
           </div>
@@ -1384,7 +1415,6 @@ function StageCard({
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const editStage = (recipe: (s: Stage) => void) => editQuest((q) => recipe(q.stages[si]!));
-  const title = textValue(ctx.project, stage.title.key, ctx.lang);
   // A stage without `flow` reads as parallel (QuestStageConfig).
   const flow = stage.flow || "parallel";
   const allKeys = quest.stages.flatMap((s) => s.objectives.map((o) => o.key));
@@ -1407,13 +1437,12 @@ function StageCard({
         {handle}
         <span className="aq-n is-brand">{si + 1}</span>
         <div className="aq-stage-title">
-          <MiniMessageInput
-            value={title}
+          <TextField
+            ctx={ctx}
+            bare
+            label={t("stage", { n: si + 1 })}
+            node={stage.title}
             placeholder={t("stageTitle")}
-            aria-label={t("stage", { n: si + 1 })}
-            onChange={(value) =>
-              ctx.edit(() => {}, [{ key: stage.title.key, lang: ctx.lang, value }])
-            }
           />
         </div>
         {stage.objectives.length > 1 && (
