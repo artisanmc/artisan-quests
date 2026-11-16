@@ -79,7 +79,7 @@ export const QUESTS_CSS = `
 
 .aq-quest-page { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
 .aq-quest-col { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-.aq-aside { flex: 1 1 300px; max-width: 420px; position: sticky; top: 16px; }
+.aq-aside { flex: 0 0 auto; min-width: 0; max-width: 100%; position: sticky; top: 16px; }
 .aq-quest-head { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 10px; }
 .aq-quest-page .aq-fold-head.is-inner { margin: 0 16px; border-top: 1px solid var(--border-soft); }
 .aq-quest-page .aq-card > .aq-fold-body { padding: 0 16px 14px; }
@@ -118,6 +118,6 @@ export const QUESTS_CSS = `
 .aq-legacy-row code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-mut); }
 
 .aq-preview { display: flex; overflow-x: auto; }
-.aq-preview-frame { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-radius: 2px; background: var(--mc-tooltip-bg, #100010); border: 2px solid var(--mc-tooltip-border-top, #2a0a66); }
+.aq-preview-frame { box-sizing: border-box; flex: none; min-width: 360px; display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-radius: 2px; background: var(--mc-tooltip-bg, #100010); border: 2px solid var(--mc-tooltip-border-top, #2a0a66); }
 .aq-preview-stage { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; }
 `;
