@@ -1,5 +1,6 @@
 import {
   ActionChainEditor,
+  ConditionsEditor,
   Button,
   type DocumentEditorProps,
   ItemInput,
@@ -757,7 +758,17 @@ function QuestView({ ctx, group, index }: { ctx: Ctx; group: QuestGroup; index: 
   const keyTaken = group.quests.some((q, i) => i !== index && q.key === quest.key);
   const durationBad =
     quest.duration !== "" && !DURATION.test(quest.duration.replace(/\s/g, "").toLowerCase());
-  const kept = Object.keys(quest.rest).filter((k) => k !== "actions" && k !== "giver");
+  const kept = Object.keys(quest.rest).filter(
+    (k) => k !== "actions" && k !== "giver" && k !== "completed_when",
+  );
+  // A ladder reads each quest's goal: the first quest whose goal is not reached is the current one.
+  const ladder =
+    typeof group.distribution.strategy === "string" && group.distribution.strategy.toLowerCase() === "ladder";
+  const completedWhen = Array.isArray(quest.rest.completed_when)
+    ? (quest.rest.completed_when as unknown[])
+    : quest.rest.completed_when
+      ? [quest.rest.completed_when]
+      : [];
   const giver = (
     quest.rest.giver && typeof quest.rest.giver === "object" ? quest.rest.giver : {}
   ) as Raw;
@@ -906,6 +917,21 @@ function QuestView({ ctx, group, index }: { ctx: Ctx; group: QuestGroup; index: 
           )}
         </SortableList>
       </section>
+
+      {ladder && (
+        <section className="aq-section">
+          <span className="aq-h">{t("completedWhen")}</span>
+          <ConditionsEditor
+            key={quest.uid}
+            projectId={ctx.projectId}
+            value={completedWhen}
+            emptyHint={t("completedWhenEmpty")}
+            onChange={(next) =>
+              editQuest((q) => setOrDelete(q.rest, "completed_when", next.length > 0 ? next : undefined))
+            }
+          />
+        </section>
+      )}
 
       <EventsSection
         key={quest.uid}
