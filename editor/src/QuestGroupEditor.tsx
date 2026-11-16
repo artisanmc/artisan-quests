@@ -19,6 +19,7 @@ import {
   textValue,
   textValues,
   updateDocument,
+  useOptionList,
   useContentLang,
   useProject,
   useUiLang,
@@ -75,6 +76,7 @@ import {
   questActionCount,
   questIncomplete,
   questObjectives,
+  actorChoices,
 } from "./questList";
 import { QUESTS_CSS } from "./styles";
 
@@ -654,24 +656,8 @@ function actorLabel(t: T, actorType: string): string {
     : actorType;
 }
 
-const BUILT_IN_ACTORS = ["player", "global"];
-/** Actor types of other plugins met since the editor opened: a choice left stays offered. */
-const metActors = new Set<string>();
-
-/**
- * Who may play a group: the two built-in types, then the types other plugins add (`guild`)
- * that the project's groups use or used. The editor cannot ask the server for its registry.
- */
-export function actorChoices(project: unknown, current: string): string[] {
-  const groups = (project as { documents?: Record<string, unknown> } | undefined)?.documents?.[KIND];
-  for (const g of Array.isArray(groups) ? groups : []) {
-    const type = (g as { actorType?: unknown }).actorType;
-    if (typeof type === "string" && type) metActors.add(type);
-  }
-  if (current) metActors.add(current);
-  return [...BUILT_IN_ACTORS, ...[...metActors].filter((a) => !BUILT_IN_ACTORS.includes(a)).sort()];
-}
-
+/** The server's list of actor types, declared by the plugin (`MsQuestsArtisanModule.ACTOR_TYPES`). */
+const ACTOR_TYPES = "quests:actor_types";
 /** The three ways a group hands its quests out; `sequential` and `ladder` are both "in order". */
 function strategyChoice(distribution: Raw): "" | "none" | "ordered" | "random" {
   const strategy = strategyOf(distribution);
@@ -706,7 +692,10 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
     ? (group.distribution.triggers as string[])
     : [];
   const perTier = (group.distribution.tiers ?? {}) as Record<string, unknown>;
-  const actors = actorChoices(project, group.actorType);
+  const declaredActors = useOptionList(ACTOR_TYPES)?.map((o) => o.value);
+  const actors = actorChoices(project, group.actorType, declaredActors);
+  const unknownActor =
+    !!declaredActors?.length && !!group.actorType && !declaredActors.includes(group.actorType);
 
   return (
     <div className="aq-settings">
@@ -726,6 +715,9 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
               })
             }
           />
+          {unknownActor && (
+            <span className="aq-warn">{t("actorUnknown", { type: group.actorType })}</span>
+          )}
         </div>
       </div>
 

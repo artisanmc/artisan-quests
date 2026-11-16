@@ -8,6 +8,7 @@ import {
   objectiveSentence,
   questActionCount,
   questIncomplete,
+  actorChoices,
 } from "./questList";
 
 const t = translator("en");
@@ -87,5 +88,29 @@ describe("duplicating a quest", () => {
     expect(copy.stages[0]!.objectives).toEqual(original.stages[0]!.objectives);
     expect(copy.rest).toEqual(original.rest);
     expect(original.title.key).toBe("t.title");
+  });
+});
+
+describe("actorChoices", () => {
+  it("offers the server's list, in its order", () => {
+    expect(actorChoices(undefined, "guild", ["player", "global", "guild"])).toEqual([
+      "player",
+      "global",
+      "guild",
+    ]);
+  });
+
+  it("keeps a group's type the server does not know", () => {
+    expect(actorChoices(undefined, "faction", ["player", "global"])).toEqual([
+      "player",
+      "global",
+      "faction",
+    ]);
+  });
+
+  it("without the server's list, offers the types the project's groups use", () => {
+    const project = { documents: { quest_group: [{ actorType: "guild" }, { actorType: "player" }] } };
+    expect(actorChoices(project, "global")).toEqual(["player", "global", "guild"]);
+    expect(actorChoices(project, "global", [])).toEqual(["player", "global", "guild"]);
   });
 });
