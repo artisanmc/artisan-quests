@@ -84,7 +84,8 @@ export function questBoardSummary(group: QuestGroup, lang: string): string {
       : "";
   const n = group.quests.length;
   const count = n === 1 ? t("questCountOne") : t("questCount", { count: n });
-  return ["none", "sequential", "random", "ladder"].includes(strategy)
-    ? `${count} · ${t(`strategy.${strategy}` as Parameters<T>[0]).toLowerCase()}`
+  const choice = strategy === "sequential" || strategy === "ladder" ? "ordered" : strategy;
+  return ["none", "ordered", "random"].includes(choice)
+    ? `${count} · ${t(`strategy.${choice}` as Parameters<T>[0]).toLowerCase()}`
     : count;
 }
