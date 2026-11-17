@@ -23,9 +23,11 @@ public final class ArtisanIntegration {
      * {@code ItemStackApi.matches}, {@code ConditionsApi} and the structured
      * {@code ModuleActionsApi.run}, {@code DocumentKindRegistry}, editor bundles and Game events (1.0.0); data source
      * aliases, which keep the {@code msquests:*} names of the {@code quests:*} sources (1.2.0); option
-     * lists, which hand the registered actor types to the editor ({@code OptionListRegistry}, 1.4.0).
+     * lists, which hand the registered actor types to the editor ({@code OptionListRegistry}, 1.4.0);
+     * {@code StatsApi} (the quests' statistics events and computed figures) and the editor that loads a
+     * bundle built against SDK 1.23, for the Quests tab of the Statistics space (1.5.0).
      */
-    public static final String MIN_API_VERSION = "1.4.0";
+    public static final String MIN_API_VERSION = "1.5.0";
 
     private final BukkitQuestsPlugin plugin;
     private final ArtisanAPI api;

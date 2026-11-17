@@ -144,7 +144,7 @@ Root package: `com.github.ibanetchep.msquests.bukkit`
 
 ## Artisan integration
 
-**Required** (`depend: [Artisan]` in `plugin.yml`, Artisan API 1.0.0+). At the very
+**Required** (`depend: [Artisan]` in `plugin.yml`, Artisan API 1.5.0+). At the very
 start of `onEnable`, `ArtisanIntegration.resolve` loads `ArtisanAPI` from the
 `ServicesManager`; if it is missing or too old, the plugin disables itself with a
 SEVERE message, before opening the database. Once the services are wired, `MsQuestsArtisanModule`
@@ -222,6 +222,46 @@ A quest belongs to an actor: the event fires once for each online member, on the
 that owns that player (the lifecycle hops to the server thread to read the members first).
 Nothing is read or scheduled while no listener observes the event. A cancelled core event
 fires nothing. `BukkitEventDispatcher.setObserver` is the hook; the module clears it on disable.
+
+### Statistics: the Quests tab of the editor
+
+`QuestStats` puts the quests in Artisan's statistics (Artisan ADR `stats-foundation`, API 1.5.0).
+It observes the same core events as the Game events (`BukkitEventDispatcher.setObserver`, the two
+chained).
+
+**Events**, recorded as they happen, once per member of the quest's actor:
+
+| Stat event | Dimensions | Value |
+|---|---|---|
+| `quests:started` | `group`, `quest` | - |
+| `quests:stage_completed` | `group`, `quest`, `stage` | seconds since the quest started |
+| `quests:completed` | `group`, `quest` | seconds since the quest started |
+| `quests:abandoned` | `group`, `quest` | - |
+| `quests:expired` | `group`, `quest` | - |
+
+They are stored per hour and row by row (`BOTH`). A quest whose actor names no member (the
+`global` actor) is not recorded: a Stat event of a player needs one. The dimensions are the keys
+an author writes: a renamed quest starts a new line.
+
+**Figures computed on demand** (`StatsApi.declareQuery`, 60 s of cache, parameter `group`), only
+with `content_source: artisan`, from the quest tables (`QuestFiguresSqlSource` reads,
+`QuestFigures` in `core/stats` computes, pure and tested):
+
+- `quests:progress`: per quest, how many rows were started, are in progress, completed, expired or
+  abandoned, and the median time from `created_at` to `completed_at`.
+- `quests:stuck`: per quest and stage, how many quests in progress stand on that stage, with the
+  median and the longest time on it. A quest stands on the first stage, in the Document's order,
+  that still has an objective to complete.
+
+**Stage times** come from `artisan_quests_objective.completed_at`, which `ArtisanQuestSqlRepository.save`
+sets the first time it saves an objective as completed (and clears if it is reset). A quest
+entered its stage when the last objective of the stages before ended, or when it started. Rows
+completed before this version have no time: their stage counts from the quest's start.
+
+**The tab** is `editor/src/QuestStatsTab.tsx` (`FrontendModule.stats`, editor SDK 1.23), its
+arithmetic in `editor/src/stats.ts` (tested): one group at a time, the period's counts from the
+events, the funnel of a group handed out in list order (`distribution.strategy: sequential`), a
+line per quest sorted by the share not finished, and the stages where quests stand.
 
 ### Rewards, hooks and requirements: Artisan chains
 
@@ -653,6 +693,7 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
 | Config unit tests | bukkit, core | JUnit 5 | - |
 | SQL integration tests | database | TestContainers MySQL | Docker |
 | Utility tests | core | JUnit 5 | - |
+| Statistics figures | core, database (`QuestFiguresSqlSourceTest`, H2) | JUnit 5 | - |
 
 **Base class**: `AbstractObjectiveHandlerTest` provides the MockBukkit setup, the plugin/registry mocks, and a `createObjective()` helper that builds the actor -> quest -> stage -> objective chain.
 
