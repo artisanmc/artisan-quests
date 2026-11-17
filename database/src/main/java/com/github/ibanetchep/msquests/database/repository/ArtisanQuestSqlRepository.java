@@ -23,6 +23,9 @@ import java.util.concurrent.CompletableFuture;
  * unique within a quest, so a save matches the row on {@code (quest_id, objective_key)} and moves
  * {@code stage_key} along when the objective was moved to another stage: there is never more
  * than one row per objective, and its progress follows it.
+ *
+ * <p>{@code completed_at} of an objective row is set by the first save that finds it completed
+ * (and cleared if it is reset): the end of a stage is the latest of its objectives'.
  */
 public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRepository {
 
@@ -141,6 +144,9 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                             .execute();
                 }
 
+                // An objective's completed_at is the save that first saw it completed: what the
+                // statistics read to tell since when a quest stands on its current stage.
+                Timestamp savedAt = new Timestamp(System.currentTimeMillis());
                 for (QuestObjectiveDTO obj : quest.objectives().values()) {
                     if (obj.stageKey() == null) {
                         throw new IllegalArgumentException("Objective " + obj.objectiveKey() + " of quest " + questId
@@ -148,7 +154,8 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                     }
                     int updatedObj = handle.createUpdate("""
                                     UPDATE artisan_quests_objective
-                                    SET objective_status = :status, progress = :progress, objective_type = :type, stage_key = :stageKey
+                                    SET objective_status = :status, progress = :progress, objective_type = :type, stage_key = :stageKey,
+                                        completed_at = CASE WHEN :completed THEN COALESCE(completed_at, :now) ELSE NULL END
                                     WHERE quest_id = :questId AND objective_key = :objectiveKey""")
                             .bind("questId", obj.questEntryId().toString())
                             .bind("stageKey", obj.stageKey())
@@ -156,19 +163,22 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                             .bind("status", obj.objectiveStatus().toString())
                             .bind("progress", obj.progress())
                             .bind("type", obj.objectiveType())
+                            .bind("completed", obj.objectiveStatus() == QuestObjectiveStatus.COMPLETED)
+                            .bind("now", savedAt)
                             .execute();
 
                     if (updatedObj == 0) {
                         handle.createUpdate("""
                                         INSERT INTO artisan_quests_objective
-                                            (quest_id, stage_key, objective_key, objective_status, objective_type, progress)
-                                        VALUES (:questId, :stageKey, :objectiveKey, :status, :type, :progress)""")
+                                            (quest_id, stage_key, objective_key, objective_status, objective_type, progress, completed_at)
+                                        VALUES (:questId, :stageKey, :objectiveKey, :status, :type, :progress, :completedAt)""")
                                 .bind("questId", obj.questEntryId().toString())
                                 .bind("stageKey", obj.stageKey())
                                 .bind("objectiveKey", obj.objectiveKey())
                                 .bind("status", obj.objectiveStatus().toString())
                                 .bind("type", obj.objectiveType())
                                 .bind("progress", obj.progress())
+                                .bind("completedAt", obj.objectiveStatus() == QuestObjectiveStatus.COMPLETED ? savedAt : null)
                                 .execute();
                     }
                 }

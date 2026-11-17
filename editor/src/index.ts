@@ -1,4 +1,5 @@
 import { type FrontendModule, SDK_VERSION } from "@artisan/editor-sdk";
+import { QuestStatsTab } from "./QuestStatsTab";
 import { questGroupKind } from "./questGroupKind";
 import { questsLocalRows } from "./sourceRows";
 
@@ -18,6 +19,8 @@ const questsModule: FrontendModule = {
   documents: [questGroupKind],
   // The quest sources previewed from the draft, joined to the player's state on the server.
   localPreviewRows: questsLocalRows,
+  // The Quests tab of the server's Statistics space (SDK 1.23).
+  stats: { label: { en: "Quests", fr: "Quêtes" }, component: QuestStatsTab },
 };
 
 export default questsModule;

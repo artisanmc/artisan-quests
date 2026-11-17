@@ -43,6 +43,8 @@ The platform abstraction (`MSQuestsPlatform`) decouples core logic from Bukkit. 
 
 **Artisan chains:** rewards, group hooks and requirements are Artisan action chains / conditions, carried opaquely by core (`ActionChain`, `Conditions`) and run through the `ChainRunner` / `ConditionChecker` ports (`ArtisanChainRunner`, `ArtisanConditionChecker` in `bukkit/.../artisan/`). Legacy MSQuests actions are converted by `LegacyActions`.
 
+**Statistics:** `QuestStats` (`bukkit/.../artisan/`) records the quests' Stat events through Artisan's `StatsApi` and declares the figures the editor's Quests tab asks for (`quests:progress`, `quests:stuck`), computed by `core/stats/QuestFigures` from rows read by `QuestFiguresSqlSource`. The tab is `editor/src/QuestStatsTab.tsx`. The event names and dimensions are public (Artisan stores them): never rename one. See ARCHITECTURE.md, *Statistics*.
+
 **Services orchestrate everything:**
 - `QuestLifecycleService` — start, complete, expire quests
 - `QuestProgressService` — advance objective progress, trigger stage transitions
