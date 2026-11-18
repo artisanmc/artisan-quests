@@ -683,7 +683,11 @@ built by the objective factory, as the quest reload does. Files go to the `quest
 ledger keeps `<path>#<sha256>`, and a rollback deletes a file only if its hash still matches. A
 player's quest row is written with its objectives and its ledger row in one transaction
 (`ImportLedger.writeQuest`); the ledger keeps a fingerprint of its status and objectives, and a
-rollback keeps a row a player moved since. Online players are set aside.
+rollback keeps a row a player moved since. Online players are set aside, by the import and by the
+rollback (`player_online`; the list is a snapshot taken once, the run being off the game threads). A
+group already in the ledger is not rewritten: progress is written only for the quests its file on
+disk holds (`quest_not_imported` otherwise). A rollback keeps a group file while imported rows remain
+(`in_use`).
 
 ---
 

@@ -21,6 +21,11 @@ It needs Artisan 1.7.0 or later and `content_source: artisan`.
 
 Running it again only writes what is new. `/artisan import rollback <batch> confirm` removes what the
 batch wrote and nobody touched since: a file edited in the editor and a quest a player moved are kept.
+The rows of a player who is online are kept too (run it again once they left), and a group file stays
+as long as imported progress still points to its quests.
+
+The same steps exist in the editor, in the server's **Imports** tab: dry run, import, then undo from
+the history.
 
 ## What is converted
 

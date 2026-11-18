@@ -126,6 +126,14 @@ public final class BeautyQuestsProgress {
         Map<String, Object> db = Yaml.map(config.get("database"));
         Map<String, Object> tables = Yaml.map(db.get("tables"));
         String url = jdbcUrl(config);
+        if (url != null && url.startsWith("jdbc:mysql:")) {
+            // The server ships the driver in a class loader DriverManager did not scan at startup.
+            try {
+                Class.forName("com.mysql.cj.jdbc.Driver");
+            } catch (ClassNotFoundException | LinkageError ignored) {
+                // DriverManager says so itself if no driver takes the URL
+            }
+        }
         try (Connection c = DriverManager.getConnection(url, Yaml.string(db.get("username")), Yaml.string(db.get("password")))) {
             c.setReadOnly(true);
             return database(c, tables);

@@ -150,14 +150,25 @@ public final class BeautyQuestsImporter implements Importer {
         content.rejected().forEach(r -> rejected.add(new String[]{r.sourceId(), r.code(), r.message()}));
         progress.rejected().forEach(r -> rejected.add(new String[]{r.sourceId(), r.code(), r.message()}));
         int already = 0;
+        Set<java.util.UUID> online = onlinePlayers();
+        Map<String, Set<String>> onDisk = new LinkedHashMap<>();
         for (BeautyQuestsProgress.Entry entry : progress.entries()) {
-            BeautyQuestsRows.Planned planned = BeautyQuestsRows.plan(entry, content.quests().get(entry.quest()), now);
+            BeautyQuestsContent.Quest converted = content.quests().get(entry.quest());
+            // A group written by an earlier run is read as it is now: a quest added to BeautyQuests
+            // since, or removed in the editor, has no Document to carry its progress.
+            if (converted != null && imported.contains("group:" + converted.group())
+                    && !onDisk.computeIfAbsent(converted.group(), g -> questUids(project, g)).contains(converted.uid())) {
+                rejected.add(new String[]{entry.sourceId(), "quest_not_imported", "quest " + entry.quest()
+                        + " is not in the group " + converted.group() + " as imported"});
+                continue;
+            }
+            BeautyQuestsRows.Planned planned = BeautyQuestsRows.plan(entry, converted, now);
             if (planned.isRejected()) {
                 rejected.add(new String[]{entry.sourceId(), planned.code(), planned.message()});
             } else if (planned.isRow()) {
                 if (imported.contains(entry.sourceId())) {
                     already++;
-                } else if (Bukkit.getPlayer(entry.player()) != null) {
+                } else if (online.contains(entry.player())) {
                     rejected.add(new String[]{entry.sourceId(), "player_online",
                             "the player is online: run the import again once they left"});
                 } else {
@@ -258,18 +269,35 @@ public final class BeautyQuestsImporter implements Importer {
         int files = 0;
         List<String[]> kept = new ArrayList<>();
         List<ImportLedger.Row> rows = ledger.inBatch(SOURCE, batch);
+        Set<java.util.UUID> online = onlinePlayers();
+        Set<String> undone = new java.util.HashSet<>();
         // Players' rows first: the files they point to go last.
         for (ImportLedger.Row row : rows) {
             if (!row.sourceId().startsWith("player:")) continue;
+            if (online.stream().anyMatch(id -> row.sourceId().startsWith("player:" + id + ":"))) {
+                // Their quests are in memory: removing the row now would be undone at their next save.
+                kept.add(new String[]{row.sourceId(), "player_online", "the player is online: run the rollback again once they left"});
+                continue;
+            }
             switch (ledger.undoQuest(SOURCE, row, dryRun)) {
-                case UNDONE -> quests++;
+                case UNDONE -> {
+                    quests++;
+                    undone.add(row.sourceId());
+                }
                 case CHANGED -> kept.add(new String[]{row.sourceId(), "changed_since", "the player moved this quest since the import: kept"});
-                case GONE -> { }
+                case GONE -> undone.add(row.sourceId());
             }
         }
+        // Players' quests that stay (kept above, or written by another batch) still read the groups.
+        long stillUsed = ledger.imported(SOURCE).stream().filter(id -> id.startsWith("player:") && !undone.contains(id)).count();
         boolean filesRemoved = false;
         for (ImportLedger.Row row : rows) {
             if (row.sourceId().startsWith("player:")) continue;
+            if (stillUsed > 0 && row.sourceId().startsWith("group:")) {
+                kept.add(new String[]{row.sourceId(), "in_use", stillUsed + " imported quest(s) of players remain"
+                        + " (kept by this rollback, or written by another batch): the group file is kept"});
+                continue;
+            }
             int hash = row.target().lastIndexOf('#');
             String path = hash >= 0 ? row.target().substring(0, hash) : row.target();
             Path file = project.resolve(path);
@@ -309,6 +337,32 @@ public final class BeautyQuestsImporter implements Importer {
             for (Path file : walk.filter(p -> p.toString().endsWith(".yml")).sorted().toList()) {
                 out.add(new BeautyQuestsContent.Source(dir.relativize(file).toString(), yaml(Files.readString(file, StandardCharsets.UTF_8))));
             }
+        }
+        return out;
+    }
+
+    /** A snapshot: the import runs off the game threads. */
+    private static Set<java.util.UUID> onlinePlayers() {
+        Set<java.util.UUID> out = new java.util.HashSet<>();
+        for (org.bukkit.entity.Player p : List.copyOf(Bukkit.getOnlinePlayers())) out.add(p.getUniqueId());
+        return out;
+    }
+
+    /** The uids of the quests of a group file as it is on disk; none when it is gone or unreadable. */
+    private static Set<String> questUids(Path project, String group) {
+        Set<String> out = new java.util.HashSet<>();
+        for (String ext : List.of(".yml", ".yaml")) {
+            Path file = project.resolve(QuestGroupDocumentRepository.DIR).resolve(group + ext);
+            if (!Files.isRegularFile(file)) continue;
+            try {
+                for (Object quest : Yaml.list(yaml(Files.readString(file, StandardCharsets.UTF_8)).get("quests"))) {
+                    String uid = Yaml.string(Yaml.map(quest).get("uid"));
+                    if (uid != null) out.add(uid);
+                }
+            } catch (IOException | RuntimeException e) {
+                // unreadable: no quest to attach progress to
+            }
+            break;
         }
         return out;
     }
