@@ -5,7 +5,9 @@ name: Publish
 # - push to master: snapshot (the version of build.gradle, ending in -SNAPSHOT) on /snapshots;
 # - tag v<version>: release <version> on /releases, and artisanquests-<version>.jar on a draft
 #   GitHub Release, published by hand once checked (notes: the tag's annotation, git tag -a).
-# Needs the secrets ARTISAN_REPO_USERNAME and ARTISAN_REPO_PASSWORD.
+# Every push also sends the jar to the Artisan site (its /modules/quests/versions/ page): a build of
+# master as the development build <version>-dev.<run> (notes: the pushed commits), a tag as a release.
+# Needs the secrets ARTISAN_REPO_USERNAME and ARTISAN_REPO_PASSWORD, and RELEASE_TOKEN for the site.
 on:
   push:
     branches: [master]
@@ -25,6 +27,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The notes of a development build on the site are the commits of the push.
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -63,6 +68,21 @@ jobs:
           name: artisanquests-${{ steps.version.outputs.version }}
           path: bukkit/build/libs/artisanquests-${{ steps.version.outputs.version }}.jar
           if-no-files-found: error
+      - name: Publish on the Artisan site
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # A build of master is listed as <version>-dev.<run>, and its jar carries that version.
+          SITE_VERSION="$VERSION"
+          case "$VERSION" in
+            *-SNAPSHOT)
+              SITE_VERSION="${VERSION%-SNAPSHOT}-dev.$GITHUB_RUN_NUMBER"
+              bash ./gradlew build -x test -PpluginVersion="$SITE_VERSION" --no-daemon ;;
+          esac
+          bash .github/publish-on-site.sh quests "$SITE_VERSION" "bukkit/build/libs/artisanquests-$SITE_VERSION.jar"
       - name: Draft GitHub Release
         if: github.ref_type == 'tag'
         env:
