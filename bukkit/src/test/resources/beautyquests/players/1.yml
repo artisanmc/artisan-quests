@@ -1,0 +1,13 @@
+provider: beautyquests:players
+identifier: 22222222-2222-4222-8222-222222222222
+quests:
+  '1':
+    timesFinished: 1
+    state: IN_END
+  '2':
+    state: IN_REGULAR_STAGE
+    currentBranch: 0
+    currentStage: 1
+    stageData:
+      '1':
+        amount: 1

@@ -1,0 +1,22 @@
+id: 4
+name: Pick a side
+manager:
+  branches:
+    '0':
+      stages:
+        '0':
+          stageType: NPC
+          npcID: '7'
+      endingStages:
+        '0':
+          stageType: NPC
+          npcID: '8'
+          branchLinked: 1
+        '1':
+          stageType: NPC
+          npcID: '9'
+          branchLinked: 2
+    '1':
+      stages: {}
+    '2':
+      stages: {}

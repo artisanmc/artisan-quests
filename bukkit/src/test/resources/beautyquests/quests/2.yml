@@ -1,0 +1,28 @@
+id: 2
+name: Repeat fishing
+repeatable: true
+manager:
+  branches:
+    '0':
+      stages:
+        '0':
+          stageType: FISH
+          objects:
+            c0de0000-0000-4000-8000-000000000001:
+              amount: 10
+              object:
+                v: 3953
+                type: COD
+        '1':
+          stageType: CRAFT
+          result:
+            v: 3953
+            type: BREAD
+            amount: 3
+        '2':
+          stageType: BREED
+          entityType: COW
+          amount: 2
+        '3':
+          stageType: CHAT
+          writeText: /spawn

@@ -7,6 +7,13 @@ sidebar:
 
 ## Unreleased
 
+- Import from BeautyQuests (1.0 and 2.x, files or database) with Artisan's `/artisan import
+  msquests:beautyquests`: quests into two quest groups, Citizens starter NPCs into ArtisanNpcs files,
+  players' progress into `artisan_quests_*`, with a dry run, a report and a rollback. Needs Artisan API
+  1.7.0 (the plugin still starts on 1.5.0, without the import).
+- An objective whose `item` is a whole item (written by the editor) no longer fails the quest reload.
+- Jackson is relocated in the jar: on Paper 1.21.8, the server's Jackson made the quest Documents fail to
+  read.
 - An NPC's line written in the quest: `line` on a giver, a `talk_npc` or a `deliver_item` (and `missing_line`),
   a text or one per language. `quests:npc` rows carry it; ArtisanNpcs has it said by the NPC's speaker, so a
   single sentence needs no conversation file. The editor has the field.
