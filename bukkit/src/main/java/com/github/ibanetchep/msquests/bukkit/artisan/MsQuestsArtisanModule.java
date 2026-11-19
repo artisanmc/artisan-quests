@@ -180,6 +180,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         registerPlaceholders(api);
         registerGameEvents(api);
         registerActorTypes(api);
+        registerImports(api);
 
         // STATIC: the key-set is the loaded configuration, enumerable without a player,
         // so a menu can place "the daily group" on a specific slot. Only the per-actor
@@ -423,6 +424,23 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         } catch (IllegalStateException | IllegalArgumentException e) {
             plugin.getLogger().warning("The %" + QuestPlaceholders.NAMESPACE + "_*% placeholders are not available: "
                     + e.getMessage());
+        }
+    }
+
+    /** Artisan API this module's import of BeautyQuests needs ({@code api.getImports()}). */
+    static final String IMPORTS_API = "1.7.0";
+
+    /**
+     * {@code /artisan import msquests:beautyquests} (Artisan ADR {@code data-imports}), on an Artisan
+     * that has imports; an older one simply has no such source.
+     */
+    private void registerImports(ArtisanAPI api) {
+        if (!api.isCompatibleWith(IMPORTS_API)) return;
+        try {
+            api.getImports().register(
+                    com.github.ibanetchep.msquests.bukkit.importing.BeautyQuestsImporter.declaration(plugin, api));
+        } catch (RuntimeException e) {
+            plugin.getLogger().warning("Could not register the BeautyQuests import: " + e.getMessage());
         }
     }
 

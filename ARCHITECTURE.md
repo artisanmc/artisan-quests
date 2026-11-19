@@ -90,11 +90,12 @@ Root package: `com.github.ibanetchep.msquests.database`
 | `DbAccess` | HikariCP connection pool, JDBI instance, single-thread executor |
 | `DbCredentials` | Configuration record (H2 or MySQL) |
 | `MigrationManager` | Sequential migration system with a `schema_version` table |
-| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables) |
+| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`) |
 | `SqlTables` | Table names of a layout: `LEGACY` (`msquests_*`) or `ARTISAN` (`artisan_quests_*`) |
 | `LegacyDataCopier` | One-time transactional copy from `msquests_*` to `artisan_quests_*` (see *Content source*) |
 | `repository/` | `SqlRepository` (async base), SQL implementations for Quest, PlayerProfile, Actor, Rotation; `ArtisanQuestSqlRepository` for `artisan_quests_quest/objective` |
 | `RecordRowMapper` | Generic JDBI mapper for Java records |
+| `ImportLedger` | `artisan_quests_import_map`: what an import wrote, and the quest rows it writes and a rollback removes (see *Imports*) |
 
 **Main schema:**
 ```
@@ -111,6 +112,9 @@ artisan_quests_quest     (id, quest_uid, quest_key, group_key, status, actor_id 
 artisan_quests_objective (quest_id FK, stage_key, objective_key, status, type, progress) -- composite PK
 artisan_quests_rotation  (actor_id, group_uid, rotated_at)
 artisan_quests_data_copy (one row once the copy is done)
+
+-- v4
+artisan_quests_import_map (source, source_id, target, batch, imported_at) -- PK (source, source_id)
 ```
 
 `quest_key` / `group_key` of `artisan_quests_quest` are only the last recorded
@@ -660,6 +664,30 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
    plugin refuses to start.
 4. `/msquests stats` before and after to compare. Rollback: `content_source: legacy`
    or the old jar; progress made in the meantime stays in `artisan_quests_*`.
+
+### Imports from other quest plugins
+
+`MsQuestsArtisanModule` registers the source `msquests:beautyquests` with Artisan's import contract
+(Artisan ADR `data-imports`, API 1.7.0; the source's namespace is the module id). Code in
+`bukkit/.../importing/`:
+
+| Class | Role |
+|---|---|
+| `BeautyQuestsContent` | quest files → `quest_group/v1` Documents (`beautyquests`, `beautyquests_repeatable`), pure; each quest keeps its BeautyQuests id (`quest_<id>`, uid derived from it) |
+| `BeautyQuestsProgress` | players' data, `players/*.yml` or BeautyQuests' database, 1.0 and 2.x layouts |
+| `BeautyQuestsRows` | one player's progress → the `QuestDTO` row written, pure |
+| `BeautyQuestsImporter` | plan / apply / rollback; blocks unless `content_source: artisan` |
+
+Before writing, each converted group is read back by `QuestGroupDocumentReader` and each objective
+built by the objective factory, as the quest reload does. Files go to the `quests` module folder; the
+ledger keeps `<path>#<sha256>`, and a rollback deletes a file only if its hash still matches. A
+player's quest row is written with its objectives and its ledger row in one transaction
+(`ImportLedger.writeQuest`); the ledger keeps a fingerprint of its status and objectives, and a
+rollback keeps a row a player moved since. Online players are set aside, by the import and by the
+rollback (`player_online`; the list is a snapshot taken once, the run being off the game threads). A
+group already in the ledger is not rewritten: progress is written only for the quests its file on
+disk holds (`quest_not_imported` otherwise). A rollback keeps a group file while imported rows remain
+(`in_use`).
 
 ---
 
