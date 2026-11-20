@@ -7,6 +7,11 @@ sidebar:
 
 ## Unreleased
 
+- Artisan's Deploy review now says what a change to a quest group does to the players who have its
+  quests in progress, with how many are concerned: who loses progress, who moves on, who is not asked
+  for the new content. A change that makes players lose something asks for a confirmation. Needs
+  Artisan API 1.9.0 (the plugin still starts on 1.5.0, without it).
+
 - Changing a quest's key in the editor now asks what becomes of the players' progress: keep it or
   start from zero. Until you answer, it is kept.
 

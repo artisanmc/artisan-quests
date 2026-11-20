@@ -794,8 +794,9 @@ and French.
 
 `QuestGroupChangeCheck` (`bukkit/document`) wraps it for a `quest_group` Document: the file the
 reader refuses is a problem, the rest are the impacts in the author's language. It is free of
-Artisan's types; the module hands it to `DocumentChangeCheck` (Artisan API 1.9.0, the Deploy
-review) once that API is published. One test per code in `ContentImpactTest`.
+Artisan's types; `QuestGroupDeployCheck` hands it to `DocumentChangeCheck` (the Deploy review)
+when the server's Artisan has API 1.9.0 (`MsQuestsArtisanModule.groupKind`). On an older
+Artisan the kind is declared without it and a deployment says nothing, as before. One test per code in `ContentImpactTest`.
 
 In the editor, changing the key of a quest the file already has asks what becomes of the
 progress (`undecidedKey`, `chooseKeyChange` in `editor/src/model.ts`): keep it (`old_key` is
