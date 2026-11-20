@@ -1,0 +1,79 @@
+id: 1
+name: §6The miner
+description: Help &aBruno&r with stone
+starterNPC: citizens#12
+startDialog:
+  msgs:
+  - id: 0
+    message:
+      text: I need stone.
+      sender: NPC
+  - id: 1
+    message:
+      text: Sure!
+      sender: PLAYER
+requirements:
+- id: permissionRequired
+  permissions:
+  - quests.miner
+- id: levelRequired
+  comparison: GREATER_OR_EQUAL
+  target: 5
+endRewards:
+- id: commandReward
+  commands:
+  - label: /eco give {PLAYER} 100
+    console: true
+- id: itemReward
+  items:
+  - v: 3953
+    type: DIAMOND
+    amount: 3
+- id: expReward
+  xp: 50
+- id: wait
+  delay: 20
+endMsg: §aWell done!
+timer: 30
+manager:
+  branches:
+    '0':
+      stages:
+        '0':
+          stageType: MINE
+          customText: Mine some stone
+          objects:
+            8d6a3f1e-0000-4000-8000-000000000001:
+              amount: 32
+              object: STONE
+            8d6a3f1e-0000-4000-8000-000000000002:
+              amount: 8
+              object: blockdata:minecraft:iron_ore
+        '1':
+          stageType: MOBS
+          objects:
+            8d6a3f1e-0000-4000-8000-000000000003:
+              amount: 5
+              object:
+                factoryName: bukkitEntity
+                value: ZOMBIE
+          rewards:
+          - id: textReward
+            text: Zombies down.
+        '2':
+          stageType: ITEMS
+          npcID: citizens#12
+          items:
+          - v: 3953
+            type: IRON_INGOT
+            amount: 4
+          msg:
+            msgs:
+            - id: 0
+              message:
+                text: Thanks for the iron.
+                sender: NPC
+      endingStages:
+        '0':
+          stageType: NPC
+          npcID: znpcsplus#Bruno

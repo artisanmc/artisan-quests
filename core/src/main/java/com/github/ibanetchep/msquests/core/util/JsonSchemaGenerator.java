@@ -42,9 +42,13 @@ public class JsonSchemaGenerator {
                     values.add(c.toString());
                 }
                 prop.set("enum", values);
-            } else {
-                prop.put("type", "string"); // fallback
+            } else if (java.util.Map.class.isAssignableFrom(type)) {
+                prop.put("type", "object");
+            } else if (java.util.Collection.class.isAssignableFrom(type)) {
+                prop.put("type", "array");
             }
+            // Any other type (an item spec, a line in one or several languages): the config class
+            // reads it, so the schema does not constrain its shape.
 
             properties.set(cf.name(), prop);
 
