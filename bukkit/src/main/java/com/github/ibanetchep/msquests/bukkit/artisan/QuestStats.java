@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
@@ -88,29 +89,20 @@ public final class QuestStats implements Consumer<CoreEvent> {
         stats.declareQuery(PROGRESS, CACHE_SECONDS, params -> {
             QuestGroupConfig group = configs.getQuestGroupConfigs().get(params.getOrDefault("group", ""));
             if (group == null) return List.of();
-            Map<String, String> keys = keysByUid(group);
-            return QuestFigures.progress(source.quests(keys.keySet()), keys::get);
+            Set<String> keys = group.getQuestConfigs().keySet();
+            return QuestFigures.progress(source.quests(group.getKey(), keys), key -> keys.contains(key) ? key : null);
         });
         stats.declareQuery(STUCK, CACHE_SECONDS, params -> {
             QuestGroupConfig group = configs.getQuestGroupConfigs().get(params.getOrDefault("group", ""));
             if (group == null) return List.of();
-            Map<String, String> keys = keysByUid(group);
             Map<String, List<String>> stages = new LinkedHashMap<>();
             for (QuestConfig quest : group.getOrderedQuests()) {
-                if (quest.getUid() == null) continue;
-                stages.put(quest.getUid(), quest.getStages().values().stream().map(QuestStageConfig::getKey).toList());
+                stages.put(quest.getKey(), quest.getStages().values().stream().map(QuestStageConfig::getKey).toList());
             }
-            return QuestFigures.stuck(source.stages(keys.keySet()), keys::get,
-                    uid -> stages.getOrDefault(uid, List.of()), clock.getAsLong());
+            return QuestFigures.stuck(source.stages(group.getKey(), stages.keySet()),
+                    key -> stages.containsKey(key) ? key : null,
+                    key -> stages.getOrDefault(key, List.of()), clock.getAsLong());
         });
-    }
-
-    private static Map<String, String> keysByUid(QuestGroupConfig group) {
-        Map<String, String> keys = new LinkedHashMap<>();
-        for (QuestConfig quest : group.getOrderedQuests()) {
-            if (quest.getUid() != null) keys.put(quest.getUid(), quest.getKey());
-        }
-        return keys;
     }
 
     @Override

@@ -61,7 +61,11 @@ public class QuestActorService {
             return questService.loadQuests(actor).thenRun(() -> {
                 playerProfileRegistry.syncActorMembership(actor);
                 questLifecycleService.expireQuests(actor);
-                platform.runSync(() -> questLifecycleService.fireActorLoadActions(actor));
+                platform.runSync(() -> {
+                    // First: a quest ended here frees its slot before the group hands out quests.
+                    questLifecycleService.settleLoadedQuests(actor);
+                    questLifecycleService.fireActorLoadActions(actor);
+                });
             });
         }).exceptionally(e -> {
             logger.log(Level.SEVERE, "Failed to load actor", e);

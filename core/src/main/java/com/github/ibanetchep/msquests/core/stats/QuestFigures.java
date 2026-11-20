@@ -21,11 +21,11 @@ public final class QuestFigures {
     }
 
     /** One quest row. Times in epoch milliseconds. */
-    public record QuestRow(String questUid, String status, long createdAt, @Nullable Long completedAt) {
+    public record QuestRow(String questKey, String status, long createdAt, @Nullable Long completedAt) {
     }
 
     /** One stage of one quest in progress: how many of its objectives remain, when the last one ended. */
-    public record StageRow(String questId, String questUid, long createdAt, String stageKey, int remaining,
+    public record StageRow(String questId, String questKey, long createdAt, String stageKey, int remaining,
                            @Nullable Long lastCompletedAt) {
     }
 
@@ -42,13 +42,13 @@ public final class QuestFigures {
      * Per quest: how many were started, are in progress, completed, expired or abandoned, and the
      * median time from start to completion. A quest nobody started gets no row.
      *
-     * @param keyOf the key a quest's uid has in the loaded configuration; null leaves the quest out
+     * @param keyOf the key of a row's quest when the loaded configuration still holds it; null leaves the quest out
      */
     public static List<Map<String, Object>> progress(Collection<QuestRow> rows, Function<String, @Nullable String> keyOf) {
         Map<String, int[]> counts = new LinkedHashMap<>();
         Map<String, List<Long>> durations = new LinkedHashMap<>();
         for (QuestRow row : rows) {
-            String key = keyOf.apply(row.questUid());
+            String key = keyOf.apply(row.questKey());
             if (key == null) continue;
             int[] count = counts.computeIfAbsent(key, k -> new int[5]);
             count[0]++;
@@ -88,8 +88,8 @@ public final class QuestFigures {
      * order, that still has an objective to complete; it entered it when the last objective of
      * the stages before ended, or when it started.
      *
-     * @param keyOf the key a quest's uid has in the loaded configuration; null leaves the quest out
-     * @param stagesOf the stage keys of a quest's uid, in order
+     * @param keyOf the key of a row's quest when the loaded configuration still holds it; null leaves the quest out
+     * @param stagesOf the stage keys of a quest, in order
      * @param now epoch milliseconds
      */
     public static List<Map<String, Object>> stuck(
@@ -104,10 +104,10 @@ public final class QuestFigures {
         Map<String, Map<String, List<Long>>> waits = new LinkedHashMap<>();
         for (List<StageRow> stages : byQuest.values()) {
             StageRow first = stages.get(0);
-            String key = keyOf.apply(first.questUid());
+            String key = keyOf.apply(first.questKey());
             if (key == null) continue;
             long entered = first.createdAt();
-            for (String stageKey : stagesOf.apply(first.questUid())) {
+            for (String stageKey : stagesOf.apply(first.questKey())) {
                 StageRow stage = stages.stream().filter(s -> s.stageKey().equals(stageKey)).findFirst().orElse(null);
                 if (stage == null) continue;
                 if (stage.remaining() > 0) {

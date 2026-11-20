@@ -95,7 +95,9 @@ import com.github.ibanetchep.msquests.database.DbAccess;
 import com.github.ibanetchep.msquests.database.DbCredentials;
 import com.github.ibanetchep.msquests.database.LegacyDataCopier;
 import com.github.ibanetchep.msquests.database.SqlTables;
+import com.github.ibanetchep.msquests.core.repository.KeyChangeRepository;
 import com.github.ibanetchep.msquests.database.repository.ArtisanQuestSqlRepository;
+import com.github.ibanetchep.msquests.database.repository.KeyChangeSqlRepository;
 import com.github.ibanetchep.msquests.database.repository.ActorSqlRepository;
 import com.github.ibanetchep.msquests.database.repository.PlayerProfileSqlRepository;
 import com.github.ibanetchep.msquests.database.repository.QuestSqlRepository;
@@ -207,6 +209,7 @@ public class BukkitQuestsPlugin extends JavaPlugin implements MSQuestsPlatform {
         QuestConfigRepository questConfigRepository;
         QuestRepository questRepository;
         SqlTables tables;
+        KeyChangeRepository keyChangeRepository = KeyChangeRepository.NONE;
         if (contentSource == ContentSource.ARTISAN) {
             if (!prepareArtisanStorage()) {
                 return;
@@ -215,6 +218,7 @@ public class BukkitQuestsPlugin extends JavaPlugin implements MSQuestsPlatform {
                     new ArtisanProjectFiles(artisanIntegration.getApi().getProject()));
             questConfigRepository = documentRepository;
             questRepository = new ArtisanQuestSqlRepository(dbAccess);
+            keyChangeRepository = new KeyChangeSqlRepository(dbAccess);
             tables = SqlTables.ARTISAN;
         } else {
             questConfigRepository = new QuestConfigYamlRepository(Path.of(getDataFolder().toPath() + "/quests"), getLogger(), this::langText);
@@ -233,7 +237,7 @@ public class BukkitQuestsPlugin extends JavaPlugin implements MSQuestsPlatform {
         AtomicQuestExecutor atomicQuestExecutor = new AtomicLocalQuestExecutor(questRegistry);
 
         questService = new QuestService(getLogger(), questConfigRegistry, questRepository, rotationRepository, questFactory, questRegistry, questMapper);
-        questConfigService = new QuestConfigService(getLogger(), questConfigRegistry, questConfigRepository, questGroupMapper, conditionChecker);
+        questConfigService = new QuestConfigService(getLogger(), questConfigRegistry, questConfigRepository, questGroupMapper, conditionChecker, keyChangeRepository);
         playerProfileService = new PlayerProfileService(getLogger(), playerProfileRepository, playerProfileRegistry, questActorRegistry);
         questDistributionService = new QuestDistributionService(conditionChecker);
         questLifecycleService = new QuestLifecycleService(eventDispatcher, questService, questFactory, questRegistry, questConfigRegistry, atomicQuestExecutor, questDistributionService, rotationRepository, this, chainRunner);

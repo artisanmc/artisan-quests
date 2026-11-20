@@ -138,21 +138,22 @@ class QuestStatsTest {
     void theFiguresOfAGroupReadTheRowsOfItsQuests() throws Exception {
         QuestGroupConfig group = ArtisanFixtures.group("story", "player");
         QuestConfig quest = ArtisanFixtures.multiStageQuest(group, "intro", 2);
-        String uid = "01HQUESTINTRO";
-        quest.setUid(uid);
+        String uid = "intro";
         QuestConfigRegistry configs = new QuestConfigRegistry();
         configs.registerQuestGroupConfig(group);
         List<String> stageKeys = quest.getStages().keySet().stream().toList();
         List<Collection<String>> asked = new ArrayList<>();
+        List<String> askedGroups = new ArrayList<>();
         stats.declareQueries(configs, new QuestFiguresSource() {
             @Override
-            public List<QuestRow> quests(Collection<String> questUids) {
-                asked.add(questUids);
+            public List<QuestRow> quests(String groupKey, Collection<String> questKeys) {
+                askedGroups.add(groupKey);
+                asked.add(questKeys);
                 return List.of(new QuestRow(uid, "COMPLETED", 0, 10_000L), new QuestRow(uid, "IN_PROGRESS", 0, null));
             }
 
             @Override
-            public List<StageRow> stages(Collection<String> questUids) {
+            public List<StageRow> stages(String groupKey, Collection<String> questKeys) {
                 return List.of(
                         new StageRow("a", uid, 0, stageKeys.get(0), 0, 30_000L),
                         new StageRow("a", uid, 0, stageKeys.get(1), 1, null));
@@ -160,6 +161,7 @@ class QuestStatsTest {
         });
 
         List<Map<String, Object>> progress = api.queries.get(QuestStats.PROGRESS).rows(Map.of("group", "story"));
+        assertEquals(List.of("story"), askedGroups);
         assertEquals(List.of(uid), List.copyOf(asked.get(0)));
         assertEquals("intro", progress.get(0).get("quest"));
         assertEquals(1, progress.get(0).get("completed"));

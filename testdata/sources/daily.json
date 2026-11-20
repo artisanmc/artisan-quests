@@ -178,7 +178,7 @@
             "target": 64,
             "progress_ratio": 1.0,
             "completed": true,
-            "status_key": "PENDING"
+            "status_key": "COMPLETED"
           },
           {
             "key": "walk",
@@ -232,7 +232,7 @@
             "target": 100,
             "progress_ratio": 1.0,
             "completed": true,
-            "status_key": "PENDING"
+            "status_key": "COMPLETED"
           }
         ]
       }

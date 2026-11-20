@@ -13,9 +13,10 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Copies {@code msquests_*} into {@code artisan_quests_*}, once, in one transaction, filling
- * {@code quest_uid} and {@code stage_key} from the {@link MigrationMap} the content conversion
- * wrote. The {@code msquests_*} tables are only read: the previous jar can still run on them.
+ * Copies {@code msquests_*} into {@code artisan_quests_*}, once, in one transaction, keeping
+ * each quest row under its {@code (group_key, quest_key)} and filling {@code stage_key} from the
+ * {@link MigrationMap} the content conversion wrote (with the {@code uid} an earlier conversion
+ * may have given). The {@code msquests_*} tables are only read: the previous jar can still run on them.
  *
  * <p>A quest row whose {@code (group_key, quest_key)} is not in the map belongs to a quest that no
  * longer exists in the configs (its row was already ignored at load); it is left behind, with its
@@ -33,7 +34,7 @@ public class LegacyDataCopier {
         this.jdbi = jdbi;
     }
 
-    /** Rows of one table: read from {@code msquests_*}, copied, and left behind (no uid for them). */
+    /** Rows of one table: read from {@code msquests_*}, copied, and left behind (not in the map). */
     public record TableCount(String table, int source, int copied, int skipped) {
         @Override
         public String toString() {
@@ -154,7 +155,8 @@ public class LegacyDataCopier {
                 continue;
             }
             copiedQuestIds.add((String) row[0]);
-            quests.add(new Object[]{row[0], quest.uid(), questKey, groupKey, row[3], row[4], row[5], row[6],
+            // Keys are what the row is resolved by; the uid of an earlier conversion rides along.
+            quests.add(new Object[]{row[0], quest.uid() != null ? quest.uid() : "", questKey, groupKey, row[3], row[4], row[5], row[6],
                     row[7], row[8], row[9]});
         }
         if (write) {
@@ -211,7 +213,9 @@ public class LegacyDataCopier {
                 unknownGroups.add((String) row[2]);
                 continue;
             }
-            rotations.add(new Object[]{row[0], row[1], group.uid(), row[3]});
+            // The group key; the uid of an earlier conversion instead, which the load of the
+            // Document that carries it turns into its key (it may have been renamed since).
+            rotations.add(new Object[]{row[0], row[1], group.uid() != null ? group.uid() : row[2], row[3]});
         }
         if (write) {
             insert(handle, "INSERT INTO " + to.rotation() + " (id, actor_id, group_uid, rotated_at) VALUES (?, ?, ?, ?)",

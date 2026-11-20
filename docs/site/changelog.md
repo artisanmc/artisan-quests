@@ -7,6 +7,26 @@ sidebar:
 
 ## Unreleased
 
+- Changing a quest's key in the editor now asks what becomes of the players' progress: keep it or
+  start from zero. Until you answer, it is kept.
+
+- Changing a quest that players have started no longer sends them back or blocks them: an objective
+  completed once stays completed when its target is raised, a stage or an objective added behind a
+  player is not asked of them, and a quest left with nothing to do (a lowered target, a removed
+  stage) completes with its rewards the next time the player loads instead of staying in progress
+  forever. In a `sequential` group, a quest added before the current one no longer deletes it. A
+  quest in progress taken out of its group keeps its active slot. An objective keeps its progress
+  when its key changes (`old_key` on the objective, written by the editor), starts from zero when its
+  type changes, and runs its `objective_complete` actions when a lowered target completes it. A quest
+  moved to another group keeps its progress with `old_key: { group, key }`. See
+  "Changing a quest players have started" in the quest groups page.
+- A quest group file no longer needs a `uid`: a group is identified by its file name and a quest by
+  its `key`, so a file can be written by hand. A key is an identifier (the name players read is the title). To change one without losing progress, write `old_key`
+  (the former key) on the group or the quest: the server moves the saved progress when the file loads,
+  once per database. On a network, a server that still loads the old key can no longer add a second
+  copy of the quest to a player: the rows it writes are ignored and counted in the log.
+  The editor writes it when a quest's key changes, and no longer writes uids. Files that carry uids
+  keep working: progress stored under them moves to the keys at the first load, with nothing to run.
 - Import from BeautyQuests (1.0 and 2.x, files or database) with Artisan's `/artisan import
   msquests:beautyquests`: quests into two quest groups, Citizens starter NPCs into ArtisanNpcs files,
   players' progress into `artisan_quests_*`, with a dry run, a report and a rollback. Needs Artisan API

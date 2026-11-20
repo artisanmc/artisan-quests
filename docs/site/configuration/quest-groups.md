@@ -13,7 +13,6 @@ the server. A publish reloads the quests that changed.
 
 ```yaml
 schema: quest_group/v1
-uid: 01M56YFAT5FSPXX57QAQ5JR2RN
 title: { fr: "Quêtes journalières", en: "Daily quests" }
 description: { en: "Three quests a day, renewed at 4 am." }
 actor_type: player
@@ -22,7 +21,6 @@ limits: { max_active: 3 }
 distribution: { strategy: random, amount: 3, triggers: [actor_load, period_reset] }
 quests:
   - key: miner
-    uid: 01M56YFAT6E6VBWJG4B56RXS0P
     title: { fr: "Mineur", en: "Miner" }
     description: { en: "Break 64 stone blocks." }
     stages:
@@ -38,7 +36,7 @@ quests:
 
 | Key | Type | Effect |
 |---|---|---|
-| `uid` | id | Immutable; progress is stored against it, so renaming a key keeps progress. The editor writes it. |
+| `old_key` | key or list | The file name the group had before. See [Changing a key](#changing-a-key). |
 | `title`, `description` | text | By language. |
 | `actor_type` | `player`, `global`, `guild` | Who owns the quests. `guild` needs ArtisanGuildQuests. |
 | `reset.cron`, `reset.timezone` | cron, zone | When the period ends and quests reset. |
@@ -87,12 +85,84 @@ quests:
 
 | Key | Type | Effect |
 |---|---|---|
-| `key`, `uid` | | Its key in the group, and its immutable id. |
+| `key` | | Its key, unique in the group. Progress is stored against the group key and this key. |
+| `old_key` | key or list | The keys it had before. See [Changing a key](#changing-a-key). |
 | `title`, `description` | text | By language. |
 | `stages[]` | list | Done in order; each has a `key` and `objectives`. |
-| `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys. |
+| `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys; `old_key` for a former key. |
 | `actions.complete` | action chain | The reward: any Artisan action. |
 | `completed_when` | conditions | In a `sequential` group: the state the quest aims at. |
 
 Objective types: `block_break`, `breed_animal`, `craft_item`, `harvest_crop`, `deliver_item`,
 `kill_entity`, `execute_command`, `fishing`, `placeholder`, `travel`.
+
+## Changing a key
+
+A group is identified by its file name and a quest by its `key`: that is what players'
+progress is stored against. A key is an identifier, not a name: what players read is the
+`title`, which you can change freely. Changing a key is rarely needed; to do it without
+losing progress, say what the key was:
+
+```yaml
+# quest_groups/everyday.yaml, formerly daily.yaml
+old_key: daily
+quests:
+  - key: dig
+    old_key: mine          # or a list: [mine, excavate]
+```
+
+When the file loads, the server moves the saved progress from the old key to the new one,
+before any player's quests are read. This is done once per database: loading the file again,
+on this server or another, moves nothing more, so `old_key` can stay. When you change a
+quest's key in the editor, it asks what becomes of the players' progress: keep it (it writes
+`old_key`) or start from zero (the quest counts as new).
+
+On a network, publish the file on every server that runs the group. A server that still
+loads the old key no longer finds the players' progress and starts the quest again for
+them; what they do there is not carried to the new key, and each server that has the new
+file logs how many saved rows are ignored for that reason.
+
+A file is refused when an `old_key` is still the key of another quest of the group (or of
+another group), or when two quests claim the same one: the progress would go to the wrong quest.
+
+Changing a key without `old_key` starts the quest over for everyone. The statistics already
+recorded keep the old key.
+
+## Changing a quest players have started
+
+What a player did or passed stays theirs when you change the quest:
+
+| You change | A player in the quest |
+| --- | --- |
+| Raise a target | Keeps their progress. An objective they had completed stays completed. |
+| Lower a target | An objective already past the new target is completed. A quest with nothing left completes, with its rewards, the next time the player loads. |
+| Add a stage or an objective | Does it if it comes after where they stand. One added behind them is not asked of them. |
+| Remove a stage or an objective | Goes on with what is left; with nothing left, the quest completes. |
+| Reorder stages | Stays on the stage they had reached; what now comes before it is behind them. |
+| Add a quest to a `sequential` group | Does it if it comes after their current quest. One added behind them is skipped (a quest with `completed_when` still follows its state). |
+| Take a quest out of the group | Its progress is kept and it still holds its active slot; it comes back as it was with the quest. |
+
+| Change an objective's `type` | Starts that objective from zero: progress made for another type does not count. |
+| Change an objective's `key` | Keeps their progress when the objective names its former key in `old_key` (the editor writes it). Without it, the objective starts from zero. |
+| Move a quest to another group | Keeps their progress when the quest says where it was: `old_key: { group: story, key: mine }`. |
+
+An objective completed by a lowered target runs its `objective_complete` actions when the player
+next loads, once.
+
+```yaml
+quests:
+  - key: mine
+    old_key: { group: story, key: mine }   # was in story.yaml
+    stages:
+      - key: dig
+        objectives:
+          - { key: cobble, old_key: stone, type: block_break, material: COBBLESTONE, amount: 64 }
+```
+
+Still to avoid: adding a `reset` to a group that had none (quests completed before the current
+period can be done again), and reusing the key of a removed objective for a new one of the same
+type (it starts with the old progress).
+
+Files written by earlier versions carry a `uid` on the group and on each quest. It is still
+read: progress stored under it moves to the keys the first time the file loads. New files
+do not need one.

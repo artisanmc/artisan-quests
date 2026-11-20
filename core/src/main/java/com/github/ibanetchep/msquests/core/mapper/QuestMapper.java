@@ -38,7 +38,8 @@ public class QuestMapper {
                 quest.getCreatedAt().getTime(),
                 quest.getUpdatedAt().getTime(),
                 objectiveDtos,
-                questConfig.getUid()
+                questConfig.getUid(),
+                quest.getReachedStageKey()
         );
     }
 }

@@ -90,7 +90,7 @@ Root package: `com.github.ibanetchep.msquests.database`
 | `DbAccess` | HikariCP connection pool, JDBI instance, single-thread executor |
 | `DbCredentials` | Configuration record (H2 or MySQL) |
 | `MigrationManager` | Sequential migration system with a `schema_version` table |
-| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`) |
+| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`), `AddReachedStageMigration` (v5, `artisan_quests_quest.reached_stage`), `CreateKeyChangeLedgerMigration` (v6, `artisan_quests_key_change`) |
 | `SqlTables` | Table names of a layout: `LEGACY` (`msquests_*`) or `ARTISAN` (`artisan_quests_*`) |
 | `LegacyDataCopier` | One-time transactional copy from `msquests_*` to `artisan_quests_*` (see *Content source*) |
 | `repository/` | `SqlRepository` (async base), SQL implementations for Quest, PlayerProfile, Actor, Rotation; `ArtisanQuestSqlRepository` for `artisan_quests_quest/objective` |
@@ -115,10 +115,18 @@ artisan_quests_data_copy (one row once the copy is done)
 
 -- v4
 artisan_quests_import_map (source, source_id, target, batch, imported_at) -- PK (source, source_id)
+
+-- v5
+artisan_quests_quest.reached_stage  -- key of the stage the quest stood on at its last save, NULL before
+
+-- v6
+artisan_quests_key_change (from_group, from_key, to_group, to_key, applied_at) -- PK (from_group, from_key); from_key '' for a group
 ```
 
-`quest_key` / `group_key` of `artisan_quests_quest` are only the last recorded
-names (logs, support): a row is resolved by `quest_uid`.
+A row of `artisan_quests_quest` is resolved by `(group_key, quest_key)`, and a rotation by
+the group key (the column is still named `group_uid`). A save never changes these names:
+only a key change does (see *Content source*, *Identity and key changes*). `quest_uid` is the uid of
+a Document that still carries one, else empty; nothing is resolved by it.
 
 ### `bukkit/` - Paper integration
 
@@ -221,7 +229,7 @@ reacts to a quest without a hook in its group.
 | `quests:expired` | same | its duration or its period ran out |
 | `quests:abandoned` | same | `quests:abandon` (status `FAILED`) |
 
-`group`, `quest`, `stage` and `objective` are the keys an author writes, never the uids.
+`group`, `quest`, `stage` and `objective` are the keys an author writes.
 A quest belongs to an actor: the event fires once for each online member, on the thread
 that owns that player (the lifecycle hops to the server thread to read the members first).
 Nothing is read or scheduled while no listener observes the event. A cancelled core event
@@ -637,17 +645,68 @@ Read at startup only; a change requires a restart (`/msquests reload` points it 
 | `content_source` | Content | Progress |
 |---|---|---|
 | `legacy` (default) | `quests/*.yml` | `msquests_*`, by `(group_key, quest_key)` |
-| `artisan` | `<project>/quest_groups/<group>.yml` (or `.yaml`, the `.yml` copy wins) of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
+| `artisan` | `<project>/quest_groups/<group>.yml` (or `.yaml`, the `.yml` copy wins) of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `(group key, quest key)` |
 
-A Document carries an immutable `uid` (ULID) for the group and for each quest; the group
-key is the file name, renamable like quest keys without losing progress.
+The group key is the file name and a quest is identified by its key in the group: a file
+written by hand needs nothing else (see *Identity and key changes* below).
 `QuestGroupDocumentReader` produces the same `QuestGroupConfigDTO` as the YAML reader (`ltext`
 texts resolved in the manifest's `default_lang`, `duration` as `24h`/`90m`, cron with
 `reset.timezone`) and rejects the whole file on an error, with the path of the faulty value first:
-missing or already taken `uid` (server-wide), repeated objective key in a
+a `uid` already taken (server-wide), an `old_key` that is still a key, repeated objective key in a
 quest, etc. A group key is unique on the server, since commands and placeholders
 name a group by its key alone: two projects carrying `daily.yaml` are reported with both
 paths, and neither loads (a reload is then refused as a whole). Actions and conditions keep the MSQuests format for now (`type: ...`).
+
+#### Identity and key changes
+
+A quest's identity is `(group key, quest key)`, in the file and in the database alike. A key
+is an identifier, not a name (what players read is the `title`, free to change), so changing
+one is rare. A group or quest whose key changed keeps its progress by saying what the key
+was: `old_key` (one key or a list) on the group or on the quest.
+`QuestGroupDocumentReader.keyChanges` turns a Document's former keys into `KeyChange`s, `QuestConfigLoad` carries those of the groups that
+loaded, and `QuestConfigService` hands them to `KeyChangeRepository` **before** publishing
+the groups, at startup and on every reload (which rebuilds the actors from the database
+right after):
+
+| `KeyChange` | From | Moves |
+|---|---|---|
+| `Group(from, to)` | the group's `old_key` | `group_key` of its quest rows, its rotations |
+| `Quest(group, from, to)` | a quest's `old_key` | `quest_key` of its rows |
+| `GroupUid(uid, group)` | the group's `uid` | rotations stored under the uid |
+| `QuestUid(uid, group, quest)` | a quest's `uid` | the keys of the rows whose `quest_uid` is that uid |
+
+`KeyChangeSqlRepository` applies them in one transaction (groups, then uids, then quests).
+A change of key is applied **once per database** and written to `artisan_quests_key_change`
+(one row per former place, a group or a quest of a group, with what it became). Found there,
+it moves nothing, which is why `old_key` may stay in the file. Rows that appear under the
+former key afterwards were written by a server of the network that still loads the content
+from before the change (the actor has no such quest there any more, so it hands them a new
+one): adding them would give the actor the same quest twice, so they stay where they are and
+each load logs how many are ignored (`KeyChangeRepository.Left`). What a player does on such a
+server between the two publications is therefore lost: the content of a group is to be
+published on every server that runs it. A place that becomes a key again can be left again
+(taking a key forgets that it was left), a change towards another destination than the one
+written is a new one, and a later change of the same quest (`old_key: [mine, dig]`) does not
+reopen the first. The rows a `uid` points to are outside that table and move whenever some
+are found elsewhere. The repository first reads the keys in use (one pass per table) and runs
+a statement only for a former key some row carries. If the move fails, a reload is refused as
+a whole; at startup the groups that declare a former key are skipped, so none starts over next
+to progress it cannot find.
+
+`uid` is what identified groups and quests before: optional now, and read as one more former
+key, so a server whose rows were keyed by uid moves them onto the keys at its first load,
+with no step to run. The editor no longer writes one (it keeps those a file has) and writes
+`old_key` when a quest's key changes. `/msquests migrate` writes none either, and
+`LegacyDataCopier` copies the rows under their keys. The BeautyQuests import still writes
+uids (derived from the BeautyQuests id), which load like any older Document.
+
+The reader refuses a Document whose `old_key` is still the key of a quest of the group (or,
+for a group, of a group of the server), or is claimed twice: the rows would go to the wrong
+quest. A group key holds at most 64 characters, the width of `artisan_quests_rotation.group_uid`.
+
+Not covered: the statistics events already recorded keep the former key (`group`, `quest`
+dimensions), and going back to a jar that resolves rows by uid loses the rotations counted
+since (their uid was replaced by the key) and the rows of Documents without a uid.
 
 Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
 
@@ -656,14 +715,92 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
    `migration/report-<date>.txt`. Nothing else is written.
 2. `/msquests migrate --confirm`: writes the missing Documents into the `quests` module folder
    (`plugins/Artisan/modules/quests/`, created if missing; never over
-   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (`(group, key) -> uid`, `objective -> stage`). Re-run,
-   it keeps the same `uid`s.
+   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (the groups and quests converted, `objective -> stage`).
+   The Documents carry no `uid`; a `uid` an earlier version of the migration wrote (in the map or in
+   a Document) is kept and copied along, so that run still matches. Re-run, it finds a Document
+   whose file name changed since by its `old_key`.
 3. `content_source: artisan` then restart: before any loading, `LegacyDataCopier`
    copies `msquests_*` into `artisan_quests_*` in one transaction (counts verified, otherwise
    rollback), only once. Without `map.yaml` while `msquests_quest` has rows, the
    plugin refuses to start.
 4. `/msquests stats` before and after to compare. Rollback: `content_source: legacy`
    or the old jar; progress made in the meantime stays in `artisan_quests_*`.
+
+#### Content changed under a quest in progress
+
+A stored quest is rebuilt from the content of the moment each time its actor loads
+(`QuestFactory.buildQuest`): each objective takes the progress stored under its key. What the
+actor did or passed stays theirs, whatever the content becomes:
+
+- **An objective completed once stays completed** (`AbstractQuestObjective.isCompleted`): its
+  stored status wins over a target raised afterwards. A target lowered under the progress
+  completes it.
+- **A stage passed stays passed** (`QuestStage.isPassed`): a save records the stage the quest
+  stands on (`artisan_quests_quest.reached_stage`), and the stages that come before it in the
+  content are behind the actor. A stage inserted before it, an objective added to a finished
+  stage, or stages reordered do not send them back; an actor who has not reached the place
+  yet does the new stage. The legacy `msquests_quest` table records no stage: there the
+  current stage stays the first one with an objective left. When the stage recorded is gone, the current stage is the first one
+  with an objective left. A row from before the column gets it at its first load.
+- **What a change of content completed is settled when the actor loads**
+  (`QuestLifecycleService.settleLoadedQuests`, called by `QuestActorService.loadActor`): a quest
+  otherwise only reacts when one of its objectives completes in play. An objective whose progress
+  reached a lowered target gets its completion (event, `objective_complete` actions, the stage's
+  event once); a quest with nothing left is completed, rewards included. An objective stored as
+  completed is never run again.
+- **An objective's progress follows its key and its type** (`QuestFactory.stored`): read under its
+  key, else under one of its `old_key` (one key or a list, on the objective; the next save writes
+  it under the current key, no row is moved); a row stored for another objective type is ignored,
+  the objective starts from zero. The reader refuses an objective `old_key` that is still an
+  objective of the quest or is claimed twice.
+- **A quest moved to another group keeps its rows** when it says where it was: `old_key:
+  { group: story, key: mine }` on the quest gives a `KeyChange.QuestMoved`, applied with the
+  other key changes. `QuestGroupDocumentRepository` drops the group whose quest claims a place
+  that is still a quest, or one already claimed.
+- **In a `sequential` group, a step without `completed_when` added behind the actor counts as
+  done** (`ladderIndex`): the quest in progress is not dropped for it.
+- **A quest in progress whose config left its group keeps its active slot**
+  (`ActorQuestGroup.getHeldSlots`): its row is ignored, not its place, so no extra quest is
+  handed out meanwhile.
+
+`QuestContentChangeTest` holds one test per kind of change. Its `harmful…` tests pin what is
+still lost or wrong: a key changed without `old_key` (objective, or quest moved to another
+group), the row of a dropped objective key found again when a later objective of the same type
+reuses the key, and a reset added to a group that had none. The editor writes an objective's
+`old_key` when its key changes (`objectiveOut` in `editor/src/model.ts`). The editor's
+preview follows the same rules (`editor/src/sourceRows.ts`, vectors in `testdata/sources/`).
+
+
+#### What a change does, said before it is published
+
+The rules above are applied silently at the next load. `core/impact` reads them ahead, so the
+author is told before publishing: `ContentImpact.of(before, after, key changes, claimed places,
+ImpactSource)` compares the group the server loaded with the one about to be published and
+returns `Impact`s, each a loss (actors lose something they had) or a notice (they move on, or
+content added behind them is not asked of them), with how many quests in progress it touches.
+`ImpactSource` counts (`QuestImpactSqlSource`: three grouped reads of `artisan_quests_quest`
+and `artisan_quests_objective`), `ImpactMessages` holds the sentence of each code in English
+and French.
+
+| Code | Loss | Said when |
+|---|---|---|
+| `group.removed` | yes | the file is deleted and no other group names it in `old_key` |
+| `quest.removed`, `quest.replaced` | yes when in progress | a quest key is gone and nothing claims it; `replaced` when exactly one quest is gone and one is new (a key changed by hand: the sentence says to write `old_key`) |
+| `objective.replaced`, `objective.type_changed` | yes | an objective key gone and a new one of the same type on the same stage, or a type changed under the same key |
+| `group.renamed`, `quest.renamed`, `quest.moved` | no | `old_key` moves the progress (once per database) |
+| `objective.target_raised`, `objective.target_lowered`, `objective.added`, `objective.removed` | no | who has more to do, who completes at the next load |
+| `stage.added`, `stage.removed`, `stage.removed_last` | no | who is past it, who moves on or completes the quest |
+| `group.reset_added` | no | a reset on a group that had none: earlier completions stop counting |
+
+`QuestGroupChangeCheck` (`bukkit/document`) wraps it for a `quest_group` Document: the file the
+reader refuses is a problem, the rest are the impacts in the author's language. It is free of
+Artisan's types; the module hands it to `DocumentChangeCheck` (Artisan API 1.9.0, the Deploy
+review) once that API is published. One test per code in `ContentImpactTest`.
+
+In the editor, changing the key of a quest the file already has asks what becomes of the
+progress (`undecidedKey`, `chooseKeyChange` in `editor/src/model.ts`): keep it (`old_key` is
+written) or start from zero (the quest counts as new). Unanswered, the file is written as
+"keep": nothing is lost by omission.
 
 ### Imports from other quest plugins
 

@@ -99,9 +99,9 @@ public class QuestGroupConfig implements PlaceholderProvider {
     }
 
     /**
-     * Immutable id of a group read from a {@code quest_group} Document, null for a group read
-     * from {@code quests/*.yml}. The key is the Document's name and may be renamed; the uid is
-     * what the database stores.
+     * The {@code uid} a {@code quest_group} Document written before keys became the identity
+     * still carries, else null. Nothing is resolved by it any more: the rows stored under it
+     * are moved onto the key when the Document loads.
      */
     public @Nullable String getUid() {
         return uid;
@@ -116,9 +116,9 @@ public class QuestGroupConfig implements PlaceholderProvider {
         return sourceProject;
     }
 
-    /** What rows referencing this group store: its uid when it has one, else its key. */
+    /** What rows referencing this group store: its key. */
     public String getStorageId() {
-        return uid != null ? uid : key;
+        return key;
     }
 
     public String getName() {

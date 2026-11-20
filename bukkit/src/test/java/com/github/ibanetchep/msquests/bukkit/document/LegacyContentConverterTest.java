@@ -60,12 +60,17 @@ class LegacyContentConverterTest {
         for (QuestGroupConfigDTO original : legacy.groups().values()) {
             QuestGroupConfigDTO read = docs.groups().get(original.key());
             assertEquals(java.util.List.of(), LegacyContentConverter.differences(original, read), original.key());
-            assertEquals(plan.map().group(original.key()).uid(), read.uid());
+            // A group is its file name and a quest its key: no uid is written, nor mapped.
+            assertNull(read.uid());
+            assertNull(plan.map().group(original.key()).uid());
             assertEquals("Europe/Paris", read.resetTimezone());
             for (QuestConfigDTO quest : read.quests()) {
-                assertEquals(plan.map().quest(original.key(), quest.key()).uid(), quest.uid());
+                assertNull(quest.uid());
+                assertNull(plan.map().quest(original.key(), quest.key()).uid());
             }
         }
+        assertEquals(java.util.List.of(), docs.keyChanges());
+        assertFalse(Files.readString(project.resolve("quest_groups/daily.yaml")).contains("uid:"));
         assertEquals(original("daily").quests().size(), docs.groups().get("daily").quests().size());
     }
 
@@ -89,7 +94,7 @@ class LegacyContentConverterTest {
     }
 
     @Test
-    void rerunKeepsUidsAndNeverOverwrites() throws Exception {
+    void rerunNeverOverwrites() throws Exception {
         Path groupsDir = project.resolve("quest_groups");
         var first = converter().plan(legacy.groups(), legacy.failures(), groupsDir, MigrationMap.empty());
         converter().apply(first, groupsDir, dir.resolve("tmp"));
@@ -106,11 +111,14 @@ class LegacyContentConverterTest {
     }
 
     @Test
-    void rerunFindsADocumentRenamedInTheEditor() throws Exception {
+    void rerunFindsADocumentRenamedSince() throws Exception {
         Path groupsDir = project.resolve("quest_groups");
         var first = converter().plan(legacy.groups(), legacy.failures(), groupsDir, MigrationMap.empty());
         converter().apply(first, groupsDir, dir.resolve("tmp"));
-        Files.move(groupsDir.resolve("daily.yaml"), groupsDir.resolve("quotidiennes.yaml"));
+        // Renamed the way a group is: the file moved, saying what it was called.
+        Files.writeString(groupsDir.resolve("quotidiennes.yaml"),
+                "old_key: daily\n" + Files.readString(groupsDir.resolve("daily.yaml")));
+        Files.delete(groupsDir.resolve("daily.yaml"));
 
         var second = converter().plan(legacy.groups(), legacy.failures(), groupsDir, first.map());
         converter().apply(second, groupsDir, dir.resolve("tmp"));

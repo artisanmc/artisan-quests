@@ -17,7 +17,7 @@ import java.util.List;
  */
 public class QuestFiguresSqlSource implements QuestFiguresSource {
 
-    /** Uids per statement: a group's quests fit in one, a huge group is read in several. */
+    /** Quest keys per statement: a group's quests fit in one, a huge group is read in several. */
     private static final int CHUNK = 500;
 
     private final DbAccess dbAccess;
@@ -27,16 +27,17 @@ public class QuestFiguresSqlSource implements QuestFiguresSource {
     }
 
     @Override
-    public List<QuestRow> quests(Collection<String> questUids) {
+    public List<QuestRow> quests(String groupKey, Collection<String> questKeys) {
         List<QuestRow> out = new ArrayList<>();
-        for (List<String> uids : chunks(questUids)) {
+        for (List<String> keys : chunks(questKeys)) {
             dbAccess.getJdbi().useHandle(handle -> handle.createQuery("""
-                            SELECT quest_uid, quest_status, created_at, completed_at
+                            SELECT quest_key, quest_status, created_at, completed_at
                             FROM artisan_quests_quest
-                            WHERE quest_uid IN (<uids>)""")
-                    .bindList("uids", uids)
+                            WHERE group_key = :group AND quest_key IN (<keys>)""")
+                    .bind("group", groupKey)
+                    .bindList("keys", keys)
                     .map((rs, ctx) -> new QuestRow(
-                            rs.getString("quest_uid"),
+                            rs.getString("quest_key"),
                             rs.getString("quest_status"),
                             rs.getTimestamp("created_at").getTime(),
                             millis(rs.getTimestamp("completed_at"))))
@@ -46,22 +47,23 @@ public class QuestFiguresSqlSource implements QuestFiguresSource {
     }
 
     @Override
-    public List<StageRow> stages(Collection<String> questUids) {
+    public List<StageRow> stages(String groupKey, Collection<String> questKeys) {
         List<StageRow> out = new ArrayList<>();
-        for (List<String> uids : chunks(questUids)) {
+        for (List<String> keys : chunks(questKeys)) {
             dbAccess.getJdbi().useHandle(handle -> handle.createQuery("""
-                            SELECT q.id AS quest_id, q.quest_uid AS quest_uid, q.created_at AS created_at,
+                            SELECT q.id AS quest_id, q.quest_key AS quest_key, q.created_at AS created_at,
                                    o.stage_key AS stage_key,
                                    SUM(CASE WHEN o.objective_status <> 'COMPLETED' THEN 1 ELSE 0 END) AS remaining,
                                    MAX(o.completed_at) AS last_completed_at
                             FROM artisan_quests_quest q
                             JOIN artisan_quests_objective o ON o.quest_id = q.id
-                            WHERE q.quest_status = 'IN_PROGRESS' AND q.quest_uid IN (<uids>)
-                            GROUP BY q.id, q.quest_uid, q.created_at, o.stage_key""")
-                    .bindList("uids", uids)
+                            WHERE q.quest_status = 'IN_PROGRESS' AND q.group_key = :group AND q.quest_key IN (<keys>)
+                            GROUP BY q.id, q.quest_key, q.created_at, o.stage_key""")
+                    .bind("group", groupKey)
+                    .bindList("keys", keys)
                     .map((rs, ctx) -> new StageRow(
                             rs.getString("quest_id"),
-                            rs.getString("quest_uid"),
+                            rs.getString("quest_key"),
                             rs.getTimestamp("created_at").getTime(),
                             rs.getString("stage_key"),
                             rs.getInt("remaining"),
@@ -75,8 +77,8 @@ public class QuestFiguresSqlSource implements QuestFiguresSource {
         return timestamp != null && timestamp.getTime() > 0 ? timestamp.getTime() : null;
     }
 
-    private static List<List<String>> chunks(Collection<String> uids) {
-        List<String> all = List.copyOf(uids);
+    private static List<List<String>> chunks(Collection<String> keys) {
+        List<String> all = List.copyOf(keys);
         List<List<String>> out = new ArrayList<>();
         for (int i = 0; i < all.size(); i += CHUNK) out.add(all.subList(i, Math.min(all.size(), i + CHUNK)));
         return out;

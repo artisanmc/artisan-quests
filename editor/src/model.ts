@@ -28,6 +28,11 @@ export interface Text {
 
 export interface Objective {
   key: string;
+  /**
+   * The key the file had when it was read; none for an objective added since. When it differs
+   * from `key` at save, it is written in `old_key`, so the progress stored under it follows.
+   */
+  savedKey?: string;
   type: string;
   /** The type's own fields (`material`, `amount`…), verbatim. */
   params: Raw;
@@ -44,8 +49,28 @@ export interface Stage {
 }
 
 export interface Quest {
+  /** The quest's identity in its group, on the server too: what the progress is stored under. */
   key: string;
+  /**
+   * What the editor tells this quest apart by while it is open (selection, lists), stable
+   * while its key is being typed. Never written: `savedUid` is.
+   */
   uid: string;
+  /** The `uid` of a file written when quests were identified by one; kept as it is. */
+  savedUid?: string;
+  /** The key the file had when it was read; none for a quest added since. */
+  savedKey?: string;
+  /** `old_key`: the keys this quest had, whose progress the server moves onto `key`. */
+  oldKeys: string[];
+  /**
+   * What the author answered when the key of a saved quest changed: `keep` (the progress follows,
+   * `old_key` is written) or `reset` (a new quest, the progress under the old key is left).
+   * Unset: not answered yet; the file is then written as `keep`, so nothing is lost by omission.
+   * In memory only.
+   */
+  keyChoice?: "keep" | "reset";
+  /** The `{group, key}` entries of `old_key` (a quest that came from another group), kept as written. */
+  oldPlaces: Raw[];
   tier: string;
   title: Text;
   description: Text;
@@ -65,7 +90,8 @@ export interface Tier {
 export interface QuestGroup {
   id: string;
   projectId: string;
-  uid: string;
+  /** The `uid` of a file written when groups were identified by one; kept as it is. */
+  uid?: string;
   title: Text;
   description: Text;
   actorType: string;
@@ -97,7 +123,7 @@ export function readDistribution(value: unknown): Raw {
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** A ULID (time-ordered, 26 chars), what the server generates for `uid`. */
+/** A ULID (time-ordered, 26 chars): what a quest added in the editor is told apart by until it is saved. */
 export function newUid(now: number = Date.now()): string {
   let time = "";
   let t = now;
@@ -203,6 +229,7 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
     return { key, title: text(tier.title), rest: without(tier, "title") };
   });
 
+  const ids = new Set<string>();
   const quests = asList(src.quests).map((item, qi): Quest => {
     const q = asMap(item);
     const stages = asList(q.stages).map((stageItem, si): Stage => {
@@ -216,6 +243,7 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
           const obj = asMap(o);
           return {
             key: asString(obj.key) || `objective_${oi + 1}`,
+            savedKey: asString(obj.key) || undefined,
             type: asString(obj.type),
             params: without(obj, "key", "type"),
           };
@@ -223,9 +251,19 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
         rest: without(s, "key", "title", "flow", "objectives"),
       };
     });
+    const key = asString(q.key) || `quest_${qi + 1}`;
+    const savedUid = asString(q.uid) || undefined;
+    // Without a uid the key tells the quest apart: the same from one read to the next.
+    let uid = savedUid ?? key;
+    if (ids.has(uid)) uid = `${uid}_${qi}`;
+    ids.add(uid);
     return {
-      key: asString(q.key) || `quest_${qi + 1}`,
-      uid: asString(q.uid) || newUid(),
+      key,
+      uid,
+      savedUid,
+      savedKey: asString(q.key) || undefined,
+      oldKeys: keyList(q.old_key),
+      oldPlaces: placeList(q.old_key),
       tier: asString(q.tier),
       title: text(q.title),
       description: text(q.description),
@@ -238,7 +276,7 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
   const doc: QuestGroup = {
     id: asString(src.id),
     projectId: ctx.projectId,
-    uid: asString(src.uid) || newUid(),
+    uid: asString(src.uid) || undefined,
     title: text(src.title),
     description: text(src.description),
     actorType: asString(src.actor_type) || "player",
@@ -281,7 +319,7 @@ function renameOn(rest: Raw): Raw {
 /** A quest's verbatim fields; `rewards`, the former name of `actions.complete`, moves there. */
 function questRest(q: Raw): Raw {
   const rest = renameOn(
-    without(q, "key", "uid", "tier", "title", "description", "duration", "stages", "reward_display"),
+    without(q, "key", "uid", "old_key", "tier", "title", "description", "duration", "stages", "reward_display"),
   );
   if (rest.rewards !== undefined) {
     const actions = asMap(rest.actions);
@@ -289,6 +327,97 @@ function questRest(q: Raw): Raw {
     delete rest.rewards;
   }
   return rest;
+}
+
+// ------------------------------------------------------------------ key changes
+
+/** `old_key` as written: one key or a list. */
+function keyList(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : value == null ? [] : [value];
+  return items.map((item) => asString(item)).filter((key) => key !== "");
+}
+
+/** The `{group, key}` entries of an `old_key`: written by hand, never by the editor. */
+function placeList(value: unknown): Raw[] {
+  const items = Array.isArray(value) ? value : value == null ? [] : [value];
+  return items.filter((item) => item !== null && typeof item === "object" && !Array.isArray(item)) as Raw[];
+}
+
+/**
+ * Remembers the key a quest of the file is leaving, so the server moves its progress. A quest
+ * added since the file was read has no progress to move.
+ */
+export function keepOldKey(quest: Quest, from: string): void {
+  if (quest.savedKey === undefined || from === "" || from === quest.key) return;
+  if (!quest.oldKeys.includes(from)) quest.oldKeys.push(from);
+}
+
+/**
+ * The keys whose progress `quest` takes over: the ones its file names, the ones it left while
+ * open, and the one it had when read. Never its own key, nor a key a quest of the group holds
+ * now: the server refuses a file where a former key is still someone's key.
+ */
+export function oldKeysOf(quest: Quest, groupKeys: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (const key of [...quest.oldKeys, quest.savedKey ?? ""]) {
+    if (key === "" || key === quest.key || groupKeys.has(key) || out.includes(key)) continue;
+    out.push(key);
+  }
+  return out;
+}
+
+/**
+ * The key a saved quest left without its author saying what becomes of the progress stored
+ * under it, or null: the view asks ({@link chooseKeyChange}).
+ */
+export function undecidedKey(quest: Quest): string | null {
+  const saved = quest.savedKey;
+  if (saved === undefined || saved === "" || saved === quest.key) return null;
+  if (quest.keyChoice !== undefined || quest.oldKeys.includes(saved)) return null;
+  return saved;
+}
+
+/**
+ * The author's answer to a changed key. `keep`: the key the quest had is written in `old_key`.
+ * `reset`: every former key is dropped and the quest counts as new under its key.
+ */
+export function chooseKeyChange(quest: Quest, choice: "keep" | "reset"): void {
+  if (choice === "keep") {
+    if (quest.savedKey !== undefined) keepOldKey(quest, quest.savedKey);
+    quest.keyChoice = "keep";
+    return;
+  }
+  quest.oldKeys = [];
+  quest.oldPlaces = [];
+  // As a quest added since the file was read: no progress to move, nothing more to ask.
+  quest.savedKey = undefined;
+  quest.keyChoice = "reset";
+}
+
+function oldKeyField(quest: Quest, groupKeys: ReadonlySet<string>): unknown {
+  const keys: unknown[] = [...oldKeysOf(quest, groupKeys), ...quest.oldPlaces];
+  return keys.length === 0 ? undefined : keys.length === 1 ? keys[0] : keys;
+}
+
+/**
+ * An objective as written. Its `old_key` names the keys whose stored progress it takes over:
+ * the ones the file names and the one it had when read, never its own key nor a key another
+ * objective of the quest holds now (the server refuses that file).
+ */
+function objectiveOut(objective: Objective, questKeys: ReadonlySet<string>): Raw {
+  const { old_key: written, ...params } = objective.params;
+  const olds: string[] = [];
+  for (const key of [...keyList(written), objective.savedKey ?? ""]) {
+    if (key === "" || key === objective.key || questKeys.has(key) || olds.includes(key)) continue;
+    olds.push(key);
+  }
+  const old = olds.length === 0 ? undefined : olds.length === 1 ? olds[0] : olds;
+  return compactOld({ key: objective.key, old_key: old, type: objective.type, ...params });
+}
+
+function compactOld(raw: Raw): Raw {
+  if (raw.old_key === undefined) delete raw.old_key;
+  return raw;
 }
 
 // ------------------------------------------------------------------ serialize
@@ -337,10 +466,13 @@ export function serializeQuestGroup(group: QuestGroup, project: unknown): Raw {
   const tiers: Raw = {};
   for (const tier of group.tiers) tiers[tier.key] = { ...tier.rest, title: t(tier.title) };
 
-  const quests = group.quests.map((q) =>
-    compact({
+  const keys = new Set(group.quests.map((q) => q.key));
+  const quests = group.quests.map((q) => {
+    const objectiveKeys = new Set(q.stages.flatMap((s) => s.objectives.map((o) => o.key)));
+    return compact({
       key: q.key,
-      uid: q.uid,
+      uid: q.savedUid,
+      old_key: oldKeyField(q, keys),
       tier: q.tier,
       title: t(q.title),
       description: optional(q.description),
@@ -352,11 +484,11 @@ export function serializeQuestGroup(group: QuestGroup, project: unknown): Raw {
           title: optional(s.title),
           flow: s.flow,
           ...s.rest,
-          objectives: s.objectives.map((o) => ({ key: o.key, type: o.type, ...o.params })),
+          objectives: s.objectives.map((o) => objectiveOut(o, objectiveKeys)),
         }),
       ),
-    }),
-  );
+    });
+  });
 
   const fields: Raw = {
     ...group.rest,
@@ -385,8 +517,8 @@ export function serializeQuestGroup(group: QuestGroup, project: unknown): Raw {
 // ------------------------------------------------------------------ text sites
 
 /**
- * Each text node and its canonical key. Quests are addressed by `uid` (unique and
- * immutable), stages by key within their quest: a reorder never moves a text.
+ * Each text node and its canonical key. Quests are addressed by key, stages by key within
+ * their quest: a reorder never moves a text, and a hand-written file reads the same way.
  */
 export function* questGroupTextSites(group: QuestGroup): Iterable<LTextSiteContribution> {
   const base = `${DIR}.${group.id}`;
@@ -408,8 +540,8 @@ export function* questGroupTextSites(group: QuestGroup): Iterable<LTextSiteContr
   const seen = new Set<string>();
   for (let qi = 0; qi < group.quests.length; qi++) {
     const q = group.quests[qi]!;
-    const qid = seen.has(q.uid) ? `${q.uid}_${qi}` : q.uid;
-    seen.add(q.uid);
+    const qid = seen.has(q.key) ? `${q.key}_${qi}` : q.key;
+    seen.add(q.key);
     const qbase = `${base}.quests.${qid}`;
     yield {
       lText: q.title,

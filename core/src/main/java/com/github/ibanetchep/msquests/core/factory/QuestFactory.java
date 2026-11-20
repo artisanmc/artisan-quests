@@ -12,6 +12,8 @@ import com.github.ibanetchep.msquests.core.quest.config.QuestStageConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjectiveStatus;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.util.Date;
 import java.util.UUID;
 
@@ -89,8 +91,8 @@ public class QuestFactory {
                 int progress = 0;
                 QuestObjectiveStatus status = QuestObjectiveStatus.PENDING;
 
-                if (dto.objectives() != null && dto.objectives().containsKey(objConfig.getKey())) {
-                    QuestObjectiveDTO objectiveDTO = dto.objectives().get(objConfig.getKey());
+                QuestObjectiveDTO objectiveDTO = stored(dto, objConfig);
+                if (objectiveDTO != null) {
                     progress = objectiveDTO.progress();
                     status = objectiveDTO.objectiveStatus();
                 }
@@ -102,6 +104,38 @@ public class QuestFactory {
             quest.addStage(stage);
         }
 
+        markPassedStages(quest, dto.reachedStage());
         return quest;
+    }
+
+    /**
+     * What is stored for an objective: the row under its key, else under the first of its former
+     * keys ({@code old_key}) that has one; the next save writes it under the current key. A row
+     * of another objective type is not its progress (60 blocks broken are not 60 kills): the
+     * objective starts from zero. A row that names no type, from before types were stored, counts.
+     */
+    private static @Nullable QuestObjectiveDTO stored(QuestDTO dto, QuestObjectiveConfig config) {
+        if (dto.objectives() == null) return null;
+        QuestObjectiveDTO row = dto.objectives().get(config.getKey());
+        for (String former : config.getFormerKeys()) {
+            if (row != null) break;
+            row = dto.objectives().get(former);
+        }
+        if (row == null) return null;
+        String type = row.objectiveType();
+        return type == null || type.isBlank() || type.equals(config.getType()) ? row : null;
+    }
+
+    /**
+     * The stages before the one the quest had reached are behind the actor. The stage reached is
+     * found by its key: when it is gone (removed, or its key changed), nothing is marked and the
+     * current stage is the first one with an objective left, as for a row that never recorded it.
+     */
+    private static void markPassedStages(Quest quest, String reachedStage) {
+        if (reachedStage == null || !quest.getStages().containsKey(reachedStage)) return;
+        for (QuestStage stage : quest.getStages().values()) {
+            if (stage.getKey().equals(reachedStage)) return;
+            stage.setPassed(true);
+        }
     }
 }

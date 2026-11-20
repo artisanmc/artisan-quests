@@ -63,8 +63,9 @@ export function conditionsText(conditions: unknown[]): string | null {
 }
 
 /**
- * A copy of `quest` for the same group: its own uid, a free key, and its own text nodes, so
- * editing the copy's title leaves the original's. `copyText` gives the new node of a text.
+ * A copy of `quest` for the same group: a quest of its own (a free key, nothing of the
+ * original's past: no saved uid, no former keys) with its own text nodes, so editing the
+ * copy's title leaves the original's. `copyText` gives the new node of a text.
  */
 export function duplicateQuest(
   quest: Quest,
@@ -73,6 +74,16 @@ export function duplicateQuest(
 ): Quest {
   const copy = structuredClone(quest);
   copy.uid = newUid();
+  copy.savedUid = undefined;
+  copy.savedKey = undefined;
+  copy.oldKeys = [];
+  copy.oldPlaces = [];
+  for (const stage of copy.stages) {
+    for (const objective of stage.objectives) {
+      objective.savedKey = undefined;
+      delete objective.params.old_key;
+    }
+  }
   copy.key = freeKey(`${quest.key}_copy`, takenKeys);
   copy.title = copyText(quest.title);
   copy.description = copyText(quest.description);
