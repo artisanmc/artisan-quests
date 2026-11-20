@@ -68,6 +68,8 @@ shadowJar {
     // Lamp is shaded by other plugins of the server too (Core): unrelocated, a plugin that loads
     // after this one can link half of Lamp from this jar and half from its own (LinkageError).
     relocate 'revxrsal.commands', 'com.github.ibanetchep.msquests.libs.lamp'
+    // Same for Jdbi, which Core shares with its dependents (MSBoosts): they linked ours instead.
+    relocate 'org.jdbi', 'com.github.ibanetchep.msquests.libs.jdbi'
     // Paper 1.21.8 puts Jackson 2.13 on the server's class path, which a plugin's class loader
     // asks first: unrelocated, our databind was the server's and our YAML module (2.20) did not
     // link with it (NoSuchMethodError on any Document read).
