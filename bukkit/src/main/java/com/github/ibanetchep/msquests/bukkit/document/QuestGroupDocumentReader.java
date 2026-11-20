@@ -1,6 +1,7 @@
 package com.github.ibanetchep.msquests.bukkit.document;
 
 import com.github.ibanetchep.msquests.core.quest.config.QuestGiver;
+import com.github.ibanetchep.msquests.core.repository.StoredRename;
 import com.github.ibanetchep.msquests.core.dto.DistributionConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigHooksDTO;
@@ -17,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,8 +29,14 @@ import java.util.Set;
 /**
  * Reads a {@code quest_group/v1} Document into the same {@link QuestGroupConfigDTO} the
  * {@code quests/*.yml} reader produces, so everything after it (mapper, registries, services) is
- * shared. The group key is the Document's id (its file name); the {@code uid}s are what the
- * database stores.
+ * shared. The group key is the Document's id (its file name).
+ *
+ * <p>A group and a quest are identified by their key, which is also what the database stores.
+ * Renaming one keeps its progress when the Document says what it was called: {@code old_key}
+ * (one key or a list) on the group or the quest. {@link #renames} turns these into the moves
+ * the storage applies before the group is used; the field may stay or go once every server
+ * has loaded it. {@code uid}, the identity of Documents written before, is optional and read
+ * as one more former name.
  *
  * <p>Actions ({@code actions.*}; formerly {@code on.*} and {@code rewards}, still read) are Artisan chains and conditions ({@code requirements},
  * objective {@code conditions}) Artisan conditions, in the keyed wire; Artisan checks their
@@ -41,6 +49,9 @@ import java.util.Set;
 public final class QuestGroupDocumentReader {
 
     public static final String SCHEMA = "quest_group/v1";
+
+    /** What the rotation rows can hold ({@code artisan_quests_rotation.group_uid}). */
+    static final int MAX_GROUP_KEY = 64;
 
     /** {@code actions.<hook>} → the hook of {@link QuestGroupConfigActionsDTO}. */
     static final List<String> HOOKS = List.of(
@@ -63,7 +74,11 @@ public final class QuestGroupDocumentReader {
         if (!SCHEMA.equals(schema)) {
             throw new DocumentException("schema", "expected " + SCHEMA + ", got " + schema);
         }
-        String uid = requiredString(doc, "uid", "");
+        if (groupKey.length() > MAX_GROUP_KEY) {
+            throw new DocumentException("id", "a group key holds at most " + MAX_GROUP_KEY + " characters, got " + groupKey.length());
+        }
+        String uid = optionalString(doc, "uid", "");
+        oldKeys(doc, "");
 
         Map<String, Object> window = map(doc.get("window"), "window");
         Map<String, Object> reset = map(doc.get("reset"), "reset");
@@ -128,11 +143,12 @@ public final class QuestGroupDocumentReader {
         List<Object> questItems = list(doc.get("quests"), "quests");
         for (int i = 0; i < questItems.size(); i++) {
             QuestConfigDTO quest = quest(questItems.get(i), "quests[" + i + "]", lang);
-            if (quest.uid().equals(uid) || !questUids.add(quest.uid())) {
+            if (quest.uid() != null && (quest.uid().equals(uid) || !questUids.add(quest.uid()))) {
                 throw new DocumentException("quests[" + i + "].uid", "uid " + quest.uid() + " is used twice in this group");
             }
             quests.add(quest);
         }
+        checkOldKeys(questItems, quests);
 
         try {
             return new QuestGroupConfigDTO(
@@ -161,10 +177,85 @@ public final class QuestGroupDocumentReader {
         }
     }
 
+    /**
+     * The former names this Document declares, as moves onto its current keys. Call it on a
+     * Document {@link #read} accepted.
+     */
+    public static List<StoredRename> renames(String groupKey, Map<String, Object> doc) {
+        List<StoredRename> renames = new ArrayList<>();
+        for (String old : oldKeys(doc, "")) {
+            if (!old.equals(groupKey)) renames.add(new StoredRename.Group(old, groupKey));
+        }
+        String uid = optionalString(doc, "uid", "");
+        if (uid != null && !uid.equals(groupKey)) renames.add(new StoredRename.GroupUid(uid, groupKey));
+
+        List<Object> questItems = list(doc.get("quests"), "quests");
+        for (int i = 0; i < questItems.size(); i++) {
+            String path = "quests[" + i + "]";
+            Map<String, Object> quest = map(questItems.get(i), path);
+            String key = requiredString(quest, "key", path);
+            String questUid = optionalString(quest, "uid", path);
+            if (questUid != null) renames.add(new StoredRename.QuestUid(questUid, groupKey, key));
+            for (String old : oldKeys(quest, path)) {
+                if (!old.equals(key)) renames.add(new StoredRename.Quest(groupKey, old, key));
+            }
+        }
+        return renames;
+    }
+
+    /**
+     * A former key must lead to one quest: one that is still a quest's key would hand that
+     * quest's rows over, and one claimed twice would give them to whichever comes first.
+     */
+    private static void checkOldKeys(List<Object> questItems, List<QuestConfigDTO> quests) {
+        Set<String> keys = new HashSet<>();
+        quests.forEach(quest -> keys.add(quest.key()));
+        Map<String, String> claimed = new HashMap<>();
+        for (int i = 0; i < questItems.size(); i++) {
+            String path = "quests[" + i + "]";
+            String key = quests.get(i).key();
+            for (String old : oldKeys(map(questItems.get(i), path), path)) {
+                if (old.equals(key)) continue;
+                if (keys.contains(old)) {
+                    throw new DocumentException(path + ".old_key", "'" + old + "' is still the key of a quest of this group:"
+                            + " remove it from old_key, or the progress of '" + old + "' would move to '" + key + "'");
+                }
+                String other = claimed.putIfAbsent(old, key);
+                if (other != null) {
+                    throw new DocumentException(path + ".old_key", "'" + old + "' is already the old_key of '" + other + "'");
+                }
+            }
+        }
+    }
+
+    /** {@code old_key}: one former key, or a list of them. */
+    private static List<String> oldKeys(Map<String, Object> node, String path) {
+        String fieldPath = path.isEmpty() ? "old_key" : path + ".old_key";
+        Object value = node.get("old_key");
+        if (value == null) return List.of();
+        List<String> keys = new ArrayList<>();
+        if (value instanceof List<?> items) {
+            for (int i = 0; i < items.size(); i++) {
+                keys.add(oldKey(items.get(i), fieldPath + "[" + i + "]"));
+            }
+        } else {
+            keys.add(oldKey(value, fieldPath));
+        }
+        return keys;
+    }
+
+    private static String oldKey(@Nullable Object value, String path) {
+        String key = string(value, path);
+        if (key == null || key.isBlank()) {
+            throw new DocumentException(path, "expected a key, got nothing");
+        }
+        return key;
+    }
+
     private static QuestConfigDTO quest(Object item, String path, String lang) {
         Map<String, Object> quest = map(item, path);
         String key = requiredString(quest, "key", path);
-        String uid = requiredString(quest, "uid", path);
+        String uid = optionalString(quest, "uid", path);
 
         List<QuestStageConfigDTO> stages = new ArrayList<>();
         Set<String> objectiveKeys = new HashSet<>();
@@ -350,6 +441,12 @@ public final class QuestGroupDocumentReader {
             throw new DocumentException(fieldPath, "is required");
         }
         return value;
+    }
+
+    /** A text that may be missing; blank counts as missing. */
+    private static @Nullable String optionalString(Map<String, Object> map, String field, String path) {
+        String value = string(map.get(field), path.isEmpty() ? field : path + "." + field);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private static @Nullable String string(@Nullable Object value, String path) {

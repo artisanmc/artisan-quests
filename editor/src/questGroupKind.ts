@@ -10,7 +10,6 @@ import {
   QUESTS_FOLDER,
   type QuestGroup,
   SCHEMA,
-  newUid,
   parseQuestGroup,
   questGroupTextSites,
   serializeQuestGroup,
@@ -41,7 +40,6 @@ export const questGroupKind: DocumentKindContribution = {
     ({
       id,
       projectId,
-      uid: newUid(),
       // Empty keys: the host mints them at their canonical address.
       title: { key: "" },
       description: { key: "" },

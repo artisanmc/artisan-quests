@@ -19,6 +19,9 @@ function quest(over: Partial<Quest> = {}): Quest {
   return {
     key: "level_2",
     uid: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    savedUid: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    savedKey: "level_2",
+    oldKeys: ["level_two"],
     tier: "",
     title: { key: "t.title" },
     description: { key: "t.description" },
@@ -81,6 +84,10 @@ describe("duplicating a quest", () => {
     let n = 0;
     const copy = duplicateQuest(original, ["level_2", "level_2_copy"], () => ({ key: `new.${n++}` }));
     expect(copy.uid).not.toBe(original.uid);
+    // A quest of its own: nothing of the original's past, or its progress would follow the copy.
+    expect(copy.savedUid).toBeUndefined();
+    expect(copy.savedKey).toBeUndefined();
+    expect(copy.oldKeys).toEqual([]);
     expect(copy.key).toBe("level_2_copy_2");
     expect([copy.title.key, copy.description.key, copy.stages[0]!.title.key]).toEqual([
       "new.0",

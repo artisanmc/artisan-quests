@@ -37,7 +37,7 @@ import java.util.function.Function;
  *
  * <p>A quest belongs to an actor (a player, the server, a guild): the event fires once for each
  * online member, on the thread that owns that player. The context names the quest by the keys an
- * author writes ({@code group}, {@code quest}, {@code stage}, {@code objective}), never by its uid.
+ * author writes ({@code group}, {@code quest}, {@code stage}, {@code objective}).
  * Nothing is computed or scheduled while no listener observes the event.
  */
 public final class QuestGameEvents implements Consumer<CoreEvent> {

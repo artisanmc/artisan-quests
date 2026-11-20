@@ -5,6 +5,7 @@ import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestGroupConfigDTO;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigRepository;
+import com.github.ibanetchep.msquests.core.repository.StoredRename;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -32,9 +33,14 @@ import java.util.concurrent.CompletableFuture;
  *   <li>one per group key held by two projects: commands and placeholders name a group by its
  *       key alone, so it must be unique on the server. Neither copy loads, whatever the order the
  *       projects are listed in;</li>
- *   <li>one per uid used by two groups: rows are resolved by uid, so a duplicated one would hand
- *       a quest's progress to another quest.</li>
+ *   <li>one per uid used by two groups: the rows stored under a uid move to the quest that
+ *       carries it, so a duplicated one would hand a quest's progress to another quest;</li>
+ *   <li>one per group whose {@code old_key} is still a group's key, or is claimed by two groups,
+ *       for the same reason.</li>
  * </ul>
+ *
+ * <p>The former names of the groups that load ({@code old_key}, {@code uid}) come back as
+ * {@link QuestConfigLoad#renames()}.
  */
 public final class QuestGroupDocumentRepository implements QuestConfigRepository {
 
@@ -68,6 +74,8 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
 
         Map<String, QuestGroupConfigDTO> groups = new LinkedHashMap<>();
         Map<String, String> uidOwners = new HashMap<>();
+        Map<String, String> oldGroupOwners = new HashMap<>();
+        List<StoredRename> renames = new ArrayList<>();
         Map<String, String> langs = new HashMap<>();
         for (Map.Entry<String, List<GroupFile>> entry : byKey.entrySet()) {
             String key = entry.getKey();
@@ -81,6 +89,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
             GroupFile file = files.get(0);
 
             QuestGroupConfigDTO group;
+            List<StoredRename> groupRenames;
             try {
                 String lang = langs.computeIfAbsent(file.project(), this::defaultLang);
                 String source = projects.read(file.project(), DIR + "/" + file.name());
@@ -88,8 +97,9 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
                     failures.add(file.path() + ": the file disappeared while reading");
                     continue;
                 }
-                group = QuestGroupDocumentReader.read(key, DocumentYaml.parse(source), lang)
-                        .withSourceProject(file.project());
+                Map<String, Object> doc = DocumentYaml.parse(source);
+                group = QuestGroupDocumentReader.read(key, doc, lang).withSourceProject(file.project());
+                groupRenames = QuestGroupDocumentReader.renames(key, doc);
             } catch (IOException | RuntimeException e) {
                 failures.add(file.path() + ": " + e.getMessage());
                 continue;
@@ -97,18 +107,34 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
 
             // claimed aside, so a rejected Document reserves none of its uids
             Map<String, String> claimed = new HashMap<>();
-            String clash = claim(uidOwners, claimed, group.uid(), key);
+            String clash = group.uid() != null ? claim(uidOwners, claimed, group.uid(), key) : null;
             for (QuestConfigDTO quest : group.quests()) {
-                if (clash == null) clash = claim(uidOwners, claimed, quest.uid(), key + "/" + quest.key());
+                if (clash == null && quest.uid() != null) {
+                    clash = claim(uidOwners, claimed, quest.uid(), key + "/" + quest.key());
+                }
+            }
+            Map<String, String> claimedOld = new HashMap<>();
+            for (StoredRename rename : groupRenames) {
+                if (clash != null || !(rename instanceof StoredRename.Group old)) continue;
+                if (byKey.containsKey(old.from())) {
+                    clash = "old_key: '" + old.from() + "' is still the key of a group: remove it from old_key,"
+                            + " or the progress of '" + old.from() + "' would move to '" + key + "'";
+                } else {
+                    String other = oldGroupOwners.get(old.from());
+                    if (other != null) clash = "old_key: '" + old.from() + "' is already the old_key of group '" + other + "'";
+                    claimedOld.put(old.from(), key);
+                }
             }
             if (clash != null) {
                 failures.add(file.path() + ": " + clash);
                 continue;
             }
             uidOwners.putAll(claimed);
+            oldGroupOwners.putAll(claimedOld);
+            renames.addAll(groupRenames);
             groups.put(key, group);
         }
-        return new QuestConfigLoad(groups, failures);
+        return new QuestConfigLoad(groups, failures, renames);
     }
 
     /**

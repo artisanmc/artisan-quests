@@ -46,8 +46,9 @@ public class QuestConfig implements PlaceholderProvider {
     }
 
     /**
-     * Immutable id of a quest read from a {@code quest_group} Document, null for a quest read
-     * from {@code quests/*.yml}. The database stores it instead of the editable key.
+     * The {@code uid} a {@code quest_group} Document written before keys became the identity
+     * still carries, else null. Rows are resolved by {@code (group key, quest key)}; a new row
+     * still records it, so the jar that resolved rows by uid can read what this one wrote.
      */
     public @Nullable String getUid() {
         return uid;

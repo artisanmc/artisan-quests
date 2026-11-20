@@ -75,7 +75,7 @@ There are no MSQuests action types any more. A generic action belongs in Artisan
 
 - `core/src/main/resources/config.yml` — database settings, language, actor type action hooks
 - Quest YAML configs live in `bukkit/src/main/resources/quests/` and are loaded via `QuestConfigYamlRepository`
-- With `content_source: artisan`, quests load from the `quest_group` Documents of `<project>/quest_groups/` in every Artisan project (`QuestGroupDocumentRepository`, group keys unique on the server) and progress from the `artisan_quests_*` tables, keyed by immutable uids; `/msquests migrate` converts (see `ARCHITECTURE.md`, *Content source*)
+- With `content_source: artisan`, quests load from the `quest_group` Documents of `<project>/quest_groups/` in every Artisan project (`QuestGroupDocumentRepository`, group keys unique on the server) and progress from the `artisan_quests_*` tables, keyed by `(group key, quest key)`: a hand-written file needs no id, a rename keeps its progress through `old_key`, and the `uid` of older Documents is read as a former name (`StoredRename`, applied before the groups are published); `/msquests migrate` converts (see `ARCHITECTURE.md`, *Content source*)
 - `/artisan import msquests:beautyquests` (Artisan API 1.7.0) converts BeautyQuests' quests and progress, code in `bukkit/.../importing/`, ledger `artisan_quests_import_map` (`ImportLedger`); see `ARCHITECTURE.md`, *Imports from other quest plugins*
 - Language files: `core/src/main/resources/lang/`
 

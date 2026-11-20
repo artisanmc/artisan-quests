@@ -148,7 +148,7 @@ class LegacyDataCopierTest {
                 "block_break", QuestObjectiveStatus.IN_PROGRESS, 4, "s3")), "Q1")).join();
 
         QuestDTO reloaded = repository.getAllByActor(actor).join().get(active);
-        assertEquals("mine_renamed", reloaded.questKey(), "last-known key refreshed");
+        assertEquals("mine", reloaded.questKey(), "a save never renames a row");
         assertEquals("s3", reloaded.objectives().get("dirt").stageKey());
         assertEquals(4, reloaded.objectives().get("dirt").progress());
         assertEquals(2, reloaded.objectives().size(), "one row per objective, no duplicate left in s2");

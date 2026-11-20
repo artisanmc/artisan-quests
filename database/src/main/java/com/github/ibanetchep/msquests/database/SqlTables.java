@@ -3,9 +3,10 @@ package com.github.ibanetchep.msquests.database;
 /**
  * Table names of one storage layout. {@link #LEGACY} is what MSQuests has always written;
  * {@link #ARTISAN} is used once quests are read from {@code quest_group} Documents
- * ({@code content_source: artisan}), where rows reference uids instead of editable keys.
+ * ({@code content_source: artisan}).
  *
- * @param rotationGroupColumn column naming the group of a rotation: its key, or its uid
+ * @param rotationGroupColumn column holding the group key of a rotation ({@code group_uid} in the
+ *                            Artisan layout, named when it held a uid)
  */
 public record SqlTables(String profile, String actor, String quest, String objective, String rotation,
                         String rotationGroupColumn) {

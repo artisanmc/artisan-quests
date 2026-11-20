@@ -11,6 +11,8 @@ import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigRepository;
+import com.github.ibanetchep.msquests.core.repository.StoredRename;
+import com.github.ibanetchep.msquests.core.repository.StoredRenameRepository;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -29,6 +31,7 @@ public class QuestConfigService {
     private final QuestConfigRepository questConfigRepository;
     private final QuestGroupMapper questGroupMapper;
     private final ConditionChecker conditionChecker;
+    private final StoredRenameRepository renameRepository;
 
     public QuestConfigService(
             Logger logger,
@@ -39,7 +42,6 @@ public class QuestConfigService {
         this(logger, questRegistry, questConfigRepository, questGroupMapper, ConditionChecker.ALWAYS);
     }
 
-    /** @param conditionChecker checks the loaded requirements and objective conditions, to warn about bad ones */
     public QuestConfigService(
             Logger logger,
             QuestConfigRegistry questRegistry,
@@ -47,7 +49,23 @@ public class QuestConfigService {
             QuestGroupMapper questGroupMapper,
             ConditionChecker conditionChecker
     ) {
+        this(logger, questRegistry, questConfigRepository, questGroupMapper, conditionChecker, StoredRenameRepository.NONE);
+    }
+
+    /**
+     * @param conditionChecker checks the loaded requirements and objective conditions, to warn about bad ones
+     * @param renameRepository moves the stored rows of renamed groups and quests onto their new keys
+     */
+    public QuestConfigService(
+            Logger logger,
+            QuestConfigRegistry questRegistry,
+            QuestConfigRepository questConfigRepository,
+            QuestGroupMapper questGroupMapper,
+            ConditionChecker conditionChecker,
+            StoredRenameRepository renameRepository
+    ) {
         this.conditionChecker = conditionChecker;
+        this.renameRepository = renameRepository;
         this.logger = logger;
         this.questRegistry = questRegistry;
         this.questConfigRepository = questConfigRepository;
@@ -56,15 +74,32 @@ public class QuestConfigService {
 
     /**
      * Startup load: every group that parses is registered, broken files are logged and skipped,
-     * so one bad file does not leave the server without quests.
+     * so one bad file does not leave the server without quests. The rows of renamed groups and
+     * quests are moved first; if that fails, the groups that say they were renamed are skipped
+     * too, rather than started over next to the progress they would no longer find.
      */
     public CompletableFuture<Void> loadQuestGroups() {
         return questConfigRepository.loadAllGroups()
-                .thenAccept(load -> {
+                .thenCompose(load -> {
                     List<String> failures = new ArrayList<>(load.failures());
                     List<QuestGroupConfig> groups = mapGroups(load, failures);
-                    failures.forEach(f -> logger.severe("Quest group skipped: " + f));
-                    publish(groups);
+                    List<StoredRename> renames = renamesOf(load, groups);
+                    return renameRepository.apply(renames)
+                            .handle((moved, e) -> {
+                                if (e != null) {
+                                    logger.log(Level.SEVERE, "Moving the saved progress of renamed quests failed", e);
+                                    Set<String> renamed = new HashSet<>();
+                                    renames.forEach(rename -> renamed.add(groupOf(rename)));
+                                    groups.removeIf(group -> renamed.contains(group.getKey()));
+                                    renamed.forEach(key -> failures.add("group '" + key
+                                            + "': the saved progress of its renamed quests could not be moved"));
+                                } else {
+                                    logMoved(moved);
+                                }
+                                failures.forEach(f -> logger.severe("Quest group skipped: " + f));
+                                publish(groups);
+                                return (Void) null;
+                            });
                 })
                 .exceptionally(e -> {
                     logger.log(Level.SEVERE, "Failed to load quest groups", e);
@@ -73,12 +108,13 @@ public class QuestConfigService {
     }
 
     /**
-     * Admin reload: the new state replaces the current one only if every file parses and maps.
-     * Otherwise nothing changes and the returned future fails with the list of problems, so the
-     * server keeps running the configs it had instead of losing the broken groups.
+     * Admin reload: the new state replaces the current one only if every file parses and maps,
+     * and the rows of renamed groups and quests could be moved. Otherwise nothing changes and
+     * the returned future fails with the list of problems, so the server keeps running the
+     * configs it had instead of losing the broken groups.
      */
     public CompletableFuture<Void> reloadQuestGroups() {
-        return questConfigRepository.loadAllGroups().thenAccept(load -> {
+        return questConfigRepository.loadAllGroups().thenCompose(load -> {
             List<String> failures = new ArrayList<>(load.failures());
             List<QuestGroupConfig> groups = mapGroups(load, failures);
 
@@ -87,8 +123,38 @@ public class QuestConfigService {
                 throw new CompletionException(new QuestConfigReloadException(failures));
             }
 
-            publish(groups);
+            return renameRepository.apply(renamesOf(load, groups))
+                    .handle((moved, e) -> {
+                        if (e != null) {
+                            logger.log(Level.SEVERE, "Quest reload refused: moving the saved progress of renamed quests failed", e);
+                            throw new CompletionException(new QuestConfigReloadException(List.of(
+                                    "the saved progress of renamed quests could not be moved: " + e.getMessage())));
+                        }
+                        logMoved(moved);
+                        publish(groups);
+                        return (Void) null;
+                    });
         });
+    }
+
+    /** The renames of the groups that will be published: a group that failed to map moves nothing. */
+    private static List<StoredRename> renamesOf(QuestConfigLoad load, List<QuestGroupConfig> groups) {
+        Set<String> keys = new HashSet<>();
+        groups.forEach(group -> keys.add(group.getKey()));
+        return load.renames().stream().filter(rename -> keys.contains(groupOf(rename))).toList();
+    }
+
+    private static String groupOf(StoredRename rename) {
+        if (rename instanceof StoredRename.Group group) return group.to();
+        if (rename instanceof StoredRename.Quest quest) return quest.group();
+        if (rename instanceof StoredRename.GroupUid group) return group.group();
+        return ((StoredRename.QuestUid) rename).group();
+    }
+
+    private void logMoved(Integer moved) {
+        if (moved != null && moved > 0) {
+            logger.info("Moved " + moved + " saved row(s) onto the current keys of renamed groups and quests.");
+        }
     }
 
     private List<QuestGroupConfig> mapGroups(QuestConfigLoad load, List<String> failures) {

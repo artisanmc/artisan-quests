@@ -7,6 +7,11 @@ sidebar:
 
 ## Unreleased
 
+- A quest group file no longer needs a `uid`: a group is identified by its file name and a quest by
+  its `key`, so a file can be written by hand. To rename one without losing progress, write `old_key`
+  (the former name) on the group or the quest: the server moves the saved progress when the file loads.
+  The editor writes it when a quest's key changes, and no longer writes uids. Files that carry uids
+  keep working: progress stored under them moves to the keys at the first load, with nothing to run.
 - Import from BeautyQuests (1.0 and 2.x, files or database) with Artisan's `/artisan import
   msquests:beautyquests`: quests into two quest groups, Citizens starter NPCs into ArtisanNpcs files,
   players' progress into `artisan_quests_*`, with a dry run, a report and a rollback. Needs Artisan API

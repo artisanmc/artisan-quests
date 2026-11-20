@@ -45,6 +45,8 @@ const en = {
   remove: "Remove",
   key: "Key",
   keyTaken: "Another quest of this group has this key.",
+  formerKeys: "Formerly {{keys}}: players keep their progress.",
+  forgetFormerKeys: "Forget",
   objectiveKeyTaken: "Another objective of this quest has this key: they would share their progress.",
   tier: "Tier",
   duration: "Time limit",
@@ -223,6 +225,8 @@ const fr: Record<Key, string> = {
   remove: "Supprimer",
   key: "Clé",
   keyTaken: "Une autre quête du groupe a déjà cette clé.",
+  formerKeys: "Anciennement {{keys}} : les joueurs gardent leur progression.",
+  forgetFormerKeys: "Oublier",
   objectiveKeyTaken:
     "Un autre objectif de la quête a déjà cette clé : ils partageraient leur progression.",
   tier: "Palier",

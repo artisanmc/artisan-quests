@@ -111,20 +111,10 @@ public class QuestService {
 
     /**
      * The config a stored quest belongs to, or null (logged once) when it is no longer loaded.
-     * A row of {@code artisan_quests_quest} names its quest by uid, so the quest and its group
-     * may have been renamed since; a row of {@code msquests_quest} names it by keys.
+     * A row names its quest by {@code (group key, quest key)}; the rows of a renamed quest were
+     * moved onto its new key before the configs were published (see {@code StoredRename}).
      */
     private QuestConfig resolveConfig(QuestDTO questDTO) {
-        if (questDTO.questUid() != null) {
-            QuestConfig questConfig = questConfigRegistry.getQuestByUid(questDTO.questUid());
-            if (questConfig == null) {
-                warnMissingConfigOnce("uid:" + questDTO.questUid(),
-                        "Quest uid '" + questDTO.questUid() + "' (last saved as '" + questDTO.groupKey() + "/"
-                                + questDTO.questKey() + "') is no longer defined in any quest group.");
-            }
-            return questConfig;
-        }
-
         QuestGroupConfig questGroupConfig = questConfigRegistry.getQuestGroupConfigs().get(questDTO.groupKey());
         if (questGroupConfig == null) {
             warnMissingConfigOnce("group:" + questDTO.groupKey(),

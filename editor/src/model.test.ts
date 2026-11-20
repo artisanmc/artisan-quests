@@ -4,9 +4,11 @@ import {
   type QuestGroup,
   freeKey,
   joinChain,
+  keepOldKey,
   legacyLabel,
   newObjectiveKey,
   newUid,
+  oldKeysOf,
   parseQuestGroup,
   questGroupTextSites,
   rewardSteps,
@@ -158,29 +160,115 @@ describe("quest_group codec", () => {
     });
   });
 
-  it("gives a uid to what has none and reports a foreign schema", () => {
+  it("reports a foreign schema", () => {
     const r = parseQuestGroup(
       { id: "x", schema: "quest_group/v9", quests: [{ key: "a" }] },
       { projectId: "p", lang: "fr" },
     );
-    const group = r.doc as QuestGroup;
-    expect(group.uid).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
-    expect(group.quests[0]!.uid).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(r.unsupported).toEqual(["schema: quest_group/v9"]);
   });
 });
 
+describe("identity", () => {
+  const handWritten = {
+    id: "daily",
+    schema: "quest_group/v1",
+    title: "Daily",
+    actor_type: "player",
+    quests: [
+      { key: "mine", title: "Mine", stages: [] },
+      { key: "fish", title: "Fish", stages: [] },
+    ],
+  };
+  const parse = (src: Record<string, unknown>) =>
+    parseQuestGroup(src, { projectId: "p", lang: "fr" }).doc as QuestGroup;
+  const written = (group: QuestGroup) =>
+    serializeQuestGroup(group, project).quests as Record<string, unknown>[];
+
+  it("writes no uid into a file that has none", () => {
+    const group = parse(handWritten);
+    const out = serializeQuestGroup(group, project);
+    expect("uid" in out).toBe(false);
+    for (const quest of written(group)) {
+      expect("uid" in quest).toBe(false);
+      expect("old_key" in quest).toBe(false);
+    }
+  });
+
+  it("tells quests apart by their key, the same from one read to the next", () => {
+    expect(parse(handWritten).quests.map((q) => q.uid)).toEqual(["mine", "fish"]);
+    const twice = parse({ ...handWritten, quests: [handWritten.quests[0], handWritten.quests[0]] });
+    expect(new Set(twice.quests.map((q) => q.uid)).size).toBe(2);
+  });
+
+  it("keeps the uid of an older file where it was, and gives none to a new quest", () => {
+    const group = parse(daily);
+    expect(group.quests[0]!.uid).toBe("01JQ9AAAAAAAAAAAAAAAAAAAAA");
+    group.quests.push({ ...structuredClone(group.quests[0]!), key: "new", uid: "session", savedUid: undefined, savedKey: undefined, oldKeys: [] });
+    const out = written(group);
+    expect(out[0]!.uid).toBe("01JQ9AAAAAAAAAAAAAAAAAAAAA");
+    expect("uid" in out[1]!).toBe(false);
+    expect("old_key" in out[1]!).toBe(false);
+  });
+
+  it("writes old_key after key when a quest of the file is renamed", () => {
+    const group = parse(handWritten);
+    group.quests[0]!.key = "dig";
+    const out = written(group);
+    expect(Object.keys(out[0]!).slice(0, 2)).toEqual(["key", "old_key"]);
+    expect(out[0]!.old_key).toBe("mine");
+    // Read again, renamed again: both former keys stay, in order.
+    const again = parse(serializeQuestGroup(group, project));
+    again.quests[0]!.key = "excavate";
+    expect(written(again)[0]!.old_key).toEqual(["mine", "dig"]);
+  });
+
+  it("names no former key while the key is only being typed, nor for a quest added since", () => {
+    const group = parse(handWritten);
+    group.quests[0]!.key = "mi";
+    expect(written(group)[0]!.old_key).toBe("mine");
+    group.quests[0]!.key = "mine";
+    expect("old_key" in written(group)[0]!).toBe(false);
+
+    const added = { ...structuredClone(group.quests[0]!), key: "quest", uid: "s", savedKey: undefined };
+    keepOldKey(added, "quest_before");
+    expect(added.oldKeys).toEqual([]);
+  });
+
+  it("remembers a key left while open, so renaming back keeps what was published in between", () => {
+    const group = parse(handWritten);
+    const quest = group.quests[0]!;
+    quest.key = "dig";
+    keepOldKey(quest, "mine");
+    quest.key = "mine";
+    keepOldKey(quest, "dig");
+    expect(written(group)[0]!.old_key).toBe("dig");
+  });
+
+  it("drops a former key another quest of the group now holds: the server would refuse the file", () => {
+    const group = parse({
+      ...handWritten,
+      quests: [{ key: "dig", old_key: ["mine", "pick"], title: "Dig", stages: [] }, handWritten.quests[1]],
+    });
+    expect(written(group)[0]!.old_key).toEqual(["mine", "pick"]);
+    group.quests[1]!.key = "mine";
+    expect(oldKeysOf(group.quests[0]!, new Set(["dig", "mine"]))).toEqual(["pick"]);
+    expect(written(group)[0]!.old_key).toBe("pick");
+    expect(written(group)[1]!.old_key).toBe("fish");
+  });
+});
+
 describe("text sites", () => {
-  it("addresses quests by uid and stages by key, so a reorder moves no text", () => {
+  it("addresses quests and stages by key, so a reorder moves no text", () => {
     const { r } = roundTrip(daily);
     const keys = [...questGroupTextSites(r.doc as QuestGroup)].map((s) => s.key);
     expect(keys).toEqual([
       "quest_groups.daily.title",
       "quest_groups.daily.description",
       "quest_groups.daily.tiers.easy.title",
-      "quest_groups.daily.quests.01JQ9AAAAAAAAAAAAAAAAAAAAA.title",
-      "quest_groups.daily.quests.01JQ9AAAAAAAAAAAAAAAAAAAAA.description",
-      "quest_groups.daily.quests.01JQ9AAAAAAAAAAAAAAAAAAAAA.stages.mining.title",
+      "quest_groups.daily.quests.mine_stone_64.title",
+      "quest_groups.daily.quests.mine_stone_64.description",
+      "quest_groups.daily.quests.mine_stone_64.stages.mining.title",
     ]);
   });
 

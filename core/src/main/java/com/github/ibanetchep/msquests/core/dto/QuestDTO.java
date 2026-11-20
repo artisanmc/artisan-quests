@@ -16,7 +16,8 @@ public record QuestDTO(
         Long createdAt,
         Long updatedAt,
         Map<String, QuestObjectiveDTO> objectives,
-        // The quest config's uid: what artisan_quests_quest stores. Null for quests/*.yml configs.
+        // The uid an older quest_group Document still carries, recorded on the row for the previous
+        // jar; null otherwise. Rows are resolved by (groupKey, questKey).
         String questUid
 ) {
     public QuestDTO(UUID id, String questKey, String groupKey, UUID actorId, QuestStatus status, Long completedAt,

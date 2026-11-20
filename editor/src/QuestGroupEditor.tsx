@@ -48,9 +48,11 @@ import {
   asMap,
   freeKey,
   joinChain,
+  keepOldKey,
   legacyLabel,
   newObjectiveKey,
   newUid,
+  oldKeysOf,
   slugKey,
   splitChain,
   typedKey,
@@ -524,6 +526,7 @@ function GroupView({
             g.quests.map((q) => q.key),
           ),
           uid,
+          oldKeys: [],
           tier: "",
           title: { key: titleKey },
           description: { key: newTextKey() },
@@ -939,7 +942,7 @@ function GroupSettings({ ctx, group }: { ctx: Ctx; group: QuestGroup }) {
 
       <div className="aq-block is-wide">
         <EventsSection
-          key={group.uid}
+          key={group.id}
           ctx={ctx}
           title={t("hooks")}
           hooks={HOOKS}
@@ -1211,6 +1214,9 @@ function QuestView({
   const editQuest = (recipe: (q: Quest) => void, texts?: TextWrite[]) =>
     edit((g) => recipe(g.quests[index]!), texts);
   const keyTaken = group.quests.some((q, i) => i !== index && q.key === quest.key);
+  // The key the field had when it took the focus: what the quest is renamed from.
+  const keyBefore = useRef(quest.key);
+  const formerKeys = oldKeysOf(quest, new Set(group.quests.map((q) => q.key)));
   const durationBad =
     quest.duration !== "" && !DURATION.test(quest.duration.replace(/\s/g, "").toLowerCase());
   const kept = Object.keys(quest.rest).filter(
@@ -1329,11 +1335,34 @@ function QuestView({
                 </Field>
                 <Field
                   label={t("key")}
-                  hint={keyTaken ? <span className="aq-err">{t("keyTaken")}</span> : undefined}
+                  hint={
+                    keyTaken ? (
+                      <span className="aq-err">{t("keyTaken")}</span>
+                    ) : formerKeys.length > 0 ? (
+                      <span>
+                        {t("formerKeys", { keys: formerKeys.join(", ") })}{" "}
+                        <button
+                          type="button"
+                          className="aq-forget"
+                          onClick={() =>
+                            editQuest((q) => {
+                              q.oldKeys = [];
+                              q.savedKey = q.key;
+                            })
+                          }
+                        >
+                          {t("forgetFormerKeys")}
+                        </button>
+                      </span>
+                    ) : undefined
+                  }
                 >
                   <input
                     className="input aq-mono"
                     value={quest.key}
+                    onFocus={() => {
+                      keyBefore.current = quest.key;
+                    }}
                     onChange={(e) =>
                       editQuest((q) => {
                         q.key = typedKey(e.target.value);
@@ -1341,9 +1370,11 @@ function QuestView({
                     }
                     onBlur={() => {
                       const final = slugKey(quest.key);
-                      if (final !== quest.key)
+                      const from = keyBefore.current;
+                      if (final !== quest.key || from !== final)
                         editQuest((q) => {
                           q.key = final;
+                          keepOldKey(q, from);
                         });
                     }}
                   />

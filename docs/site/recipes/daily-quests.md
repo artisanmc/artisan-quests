@@ -27,5 +27,5 @@ quests:
         - give_money: 200
 ```
 
-Start from the module template "example_daily" in the editor, which writes the `uid`s for you. Show the
+Start from the module template "example_daily" in the editor, or write the file by hand. Show the
 countdown on a scoreboard with `%msquests_group_daily_countdown%`.

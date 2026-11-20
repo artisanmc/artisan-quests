@@ -1,5 +1,4 @@
 schema: quest_group/v1
-uid: 01M56YFAT5FSPXX57QAQ5JR2RN
 title: { fr: "Quêtes journalières", en: "Daily quests" }
 description:
   fr: "Trois quêtes par jour, renouvelées à 4 h. Un exemple : modifie-le ou supprime-le."
@@ -10,7 +9,6 @@ limits: { max_active: 3 }
 distribution: { strategy: random, amount: 3, triggers: [actor_load, period_reset] }
 quests:
   - key: miner
-    uid: 01M56YFAT6E6VBWJG4B56RXS0P
     title: { fr: "Mineur", en: "Miner" }
     description: { fr: "Casse 64 blocs de pierre.", en: "Break 64 stone blocks." }
     stages:
@@ -21,7 +19,6 @@ quests:
       complete:
         - give_item: { material: IRON_INGOT, count: 8 }
   - key: hunter
-    uid: 01M56YFAT7ZP7S04J1SPVAT0FP
     title: { fr: "Chasseur", en: "Hunter" }
     description: { fr: "Élimine 10 zombies.", en: "Kill 10 zombies." }
     stages:
@@ -32,7 +29,6 @@ quests:
       complete:
         - give_item: { material: COOKED_BEEF, count: 16 }
   - key: angler
-    uid: 01M56YFAT818DYKNKXYP1MVDBH
     title: { fr: "Pêcheur", en: "Angler" }
     description: { fr: "Pêche 5 poissons.", en: "Catch 5 fish." }
     stages:

@@ -13,7 +13,6 @@ the server. A publish reloads the quests that changed.
 
 ```yaml
 schema: quest_group/v1
-uid: 01M56YFAT5FSPXX57QAQ5JR2RN
 title: { fr: "Quêtes journalières", en: "Daily quests" }
 description: { en: "Three quests a day, renewed at 4 am." }
 actor_type: player
@@ -22,7 +21,6 @@ limits: { max_active: 3 }
 distribution: { strategy: random, amount: 3, triggers: [actor_load, period_reset] }
 quests:
   - key: miner
-    uid: 01M56YFAT6E6VBWJG4B56RXS0P
     title: { fr: "Mineur", en: "Miner" }
     description: { en: "Break 64 stone blocks." }
     stages:
@@ -38,7 +36,7 @@ quests:
 
 | Key | Type | Effect |
 |---|---|---|
-| `uid` | id | Immutable; progress is stored against it, so renaming a key keeps progress. The editor writes it. |
+| `old_key` | key or list | What the group was called before its file was renamed. See [Renaming](#renaming). |
 | `title`, `description` | text | By language. |
 | `actor_type` | `player`, `global`, `guild` | Who owns the quests. `guild` needs ArtisanGuildQuests. |
 | `reset.cron`, `reset.timezone` | cron, zone | When the period ends and quests reset. |
@@ -87,7 +85,8 @@ quests:
 
 | Key | Type | Effect |
 |---|---|---|
-| `key`, `uid` | | Its key in the group, and its immutable id. |
+| `key` | | Its key, unique in the group. Progress is stored against the group key and this key. |
+| `old_key` | key or list | The keys it had before. See [Renaming](#renaming). |
 | `title`, `description` | text | By language. |
 | `stages[]` | list | Done in order; each has a `key` and `objectives`. |
 | `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys. |
@@ -96,3 +95,31 @@ quests:
 
 Objective types: `block_break`, `breed_animal`, `craft_item`, `harvest_crop`, `deliver_item`,
 `kill_entity`, `execute_command`, `fishing`, `placeholder`, `travel`.
+
+## Renaming
+
+A group is identified by its file name and a quest by its `key`: that is what players'
+progress is stored against. To rename one without losing progress, say what it was called:
+
+```yaml
+# quest_groups/everyday.yaml, formerly daily.yaml
+old_key: daily
+quests:
+  - key: dig
+    old_key: mine          # or a list: [mine, excavate]
+```
+
+When the file loads, the server moves the saved progress from the old name to the new one,
+before any player's quests are read. Loading it again moves nothing more, so `old_key` can
+stay; remove it once every server of the network has loaded the file. The editor writes it
+when you change a quest's key.
+
+A file is refused when an `old_key` is still the key of another quest of the group (or of
+another group), or when two quests claim the same one: the progress would go to the wrong quest.
+
+Renaming a key without `old_key` starts the quest over for everyone. The statistics already
+recorded keep the old name.
+
+Files written by earlier versions carry a `uid` on the group and on each quest. It is still
+read: progress stored under it moves to the keys the first time the file loads. New files
+do not need one.

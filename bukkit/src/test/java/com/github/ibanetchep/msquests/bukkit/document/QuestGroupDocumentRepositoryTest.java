@@ -4,6 +4,7 @@ import com.github.ibanetchep.msquests.bukkit.repository.QuestConfigYamlRepositor
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestGroupConfigDTO;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
+import com.github.ibanetchep.msquests.core.repository.StoredRename;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -239,7 +240,7 @@ class QuestGroupDocumentRepositoryTest {
         Files.writeString(project.resolve("quest_groups/a.yaml"), group("G1", "Q1", "")
                 .replace("duration: 1h30m", "duration: soon"));
         Files.writeString(project.resolve("quest_groups/b.yaml"), group("G2", "Q2", "")
-                .replace("    uid: Q2\n", ""));
+                .replace("  - key: mine\n", "  - key: ''\n"));
         Files.writeString(project.resolve("quest_groups/c.yaml"), group("G3", "Q3", """
                           - { key: stone, type: block_break, material: DIRT, amount: 1 }
                 """));
@@ -249,7 +250,7 @@ class QuestGroupDocumentRepositoryTest {
         assertTrue(load.groups().isEmpty());
         String failures = String.join("\n", load.failures());
         assertTrue(failures.contains("quest_groups/a.yaml: quests[0].duration: expected a duration"), failures);
-        assertTrue(failures.contains("quest_groups/b.yaml: quests[0].uid: is required"), failures);
+        assertTrue(failures.contains("quest_groups/b.yaml: quests[0].key: is required"), failures);
         assertTrue(failures.contains("quest_groups/c.yaml: quests[0].stages[0].objectives[1].key: objective key 'stone'"), failures);
     }
 
@@ -262,6 +263,108 @@ class QuestGroupDocumentRepositoryTest {
         assertEquals(before, repository.fingerprint());
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", "").replace("64", "65"));
         assertNotEquals(before, repository.fingerprint());
+    }
+
+    // ------------------------------------------------------------ identity
+
+    /** A file as its author types it: no uid anywhere. */
+    private static String handWritten(String groupExtra, String questExtra) {
+        return """
+                schema: quest_group/v1
+                title: Daily
+                actor_type: player
+                %squests:
+                  - key: mine
+                %s    title: Mine
+                    stages:
+                      - key: s1
+                        objectives:
+                          - { key: stone, type: block_break, material: STONE, amount: 64 }
+                  - key: fish
+                    title: Fish
+                    stages:
+                      - key: s1
+                        objectives:
+                          - { key: cod, type: block_break, material: DIRT, amount: 1 }
+                """.formatted(groupExtra, questExtra);
+    }
+
+    @Test
+    void aFileWithoutAnyUidLoadsAndMovesNothing() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), handWritten("", ""));
+
+        QuestConfigLoad load = load();
+
+        assertEquals(java.util.List.of(), load.failures());
+        QuestGroupConfigDTO daily = load.groups().get("daily");
+        assertNull(daily.uid());
+        assertNull(daily.quests().getFirst().uid());
+        assertEquals(java.util.List.of(), load.renames());
+    }
+
+    @Test
+    void oldKeyOfAQuestAndOfTheGroupBecomeRenames() throws Exception {
+        Files.writeString(project.resolve("quest_groups/everyday.yaml"),
+                handWritten("old_key: daily\n", "    old_key: [dig, excavate]\n"));
+
+        QuestConfigLoad load = load();
+
+        assertEquals(java.util.List.of(), load.failures());
+        assertEquals(java.util.List.of(
+                new StoredRename.Group("daily", "everyday"),
+                new StoredRename.Quest("everyday", "dig", "mine"),
+                new StoredRename.Quest("everyday", "excavate", "mine")), load.renames());
+    }
+
+    @Test
+    void theUidsOfAnOlderDocumentBecomeRenames() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", ""));
+
+        assertEquals(java.util.List.of(
+                new StoredRename.GroupUid("G1", "daily"),
+                new StoredRename.QuestUid("Q1", "daily", "mine")), load().renames());
+    }
+
+    @Test
+    void refusesAnOldKeyThatIsStillAQuestOrClaimedTwice() throws Exception {
+        Files.writeString(project.resolve("quest_groups/a.yaml"), handWritten("", "    old_key: fish\n"));
+        Files.writeString(project.resolve("quest_groups/b.yaml"), handWritten("", "    old_key: dig\n")
+                .replace("  - key: fish\n", "  - key: fish\n    old_key: dig\n"));
+        Files.writeString(project.resolve("quest_groups/c.yaml"), handWritten("", "    old_key: mine\n"));
+
+        QuestConfigLoad load = load();
+
+        String failures = String.join("\n", load.failures());
+        assertTrue(failures.contains("quest_groups/a.yaml: quests[0].old_key: 'fish' is still the key of a quest"), failures);
+        assertTrue(failures.contains("quest_groups/b.yaml: quests[1].old_key: 'dig' is already the old_key of 'mine'"), failures);
+        assertEquals(java.util.Set.of("c"), load.groups().keySet(), "a quest's own key in old_key is ignored");
+        assertEquals(java.util.List.of(), load.renames());
+    }
+
+    @Test
+    void refusesAGroupOldKeyThatIsStillAGroupOrClaimedTwice() throws Exception {
+        Files.writeString(project.resolve("quest_groups/a.yaml"), handWritten("old_key: b\n", ""));
+        Files.writeString(project.resolve("quest_groups/b.yaml"), handWritten("old_key: former\n", ""));
+        Files.writeString(project.resolve("quest_groups/c.yaml"), handWritten("old_key: former\n", ""));
+
+        QuestConfigLoad load = load();
+
+        String failures = String.join("\n", load.failures());
+        assertTrue(failures.contains("quest_groups/a.yaml: old_key: 'b' is still the key of a group"), failures);
+        assertTrue(failures.contains("quest_groups/c.yaml: old_key: 'former' is already the old_key of group 'b'"), failures);
+        assertEquals(java.util.Set.of("b"), load.groups().keySet());
+        assertEquals(java.util.List.of(new StoredRename.Group("former", "b")), load.renames());
+    }
+
+    @Test
+    void aRejectedDocumentMovesNothing() throws Exception {
+        Files.writeString(project.resolve("quest_groups/everyday.yaml"),
+                handWritten("old_key: daily\n", "    old_key: dig\n    duration: soon\n"));
+
+        QuestConfigLoad load = load();
+
+        assertEquals(1, load.failures().size());
+        assertEquals(java.util.List.of(), load.renames());
     }
 
     // ------------------------------------------------------------ every project
