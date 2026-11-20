@@ -56,7 +56,7 @@ class QuestKeyChangeTest {
         KeyChangeRepository changes = applied -> {
             assertEquals(List.of(change), applied);
             order.add(registry.getQuestGroupConfigs().isEmpty() ? "moved before publish" : "moved after publish");
-            return CompletableFuture.completedFuture(3);
+            return CompletableFuture.completedFuture(KeyChangeRepository.Applied.moved(3));
         };
 
         service(load(List.of("daily"), List.of(change)), changes).reloadQuestGroups().join();
@@ -70,7 +70,7 @@ class QuestKeyChangeTest {
         List<KeyChange> applied = new ArrayList<>();
         KeyChangeRepository changes = list -> {
             applied.addAll(list);
-            return CompletableFuture.completedFuture(0);
+            return CompletableFuture.completedFuture(KeyChangeRepository.Applied.NOTHING);
         };
         KeyChange kept = new KeyChange.Quest("daily", "mine", "dig");
         QuestConfigLoad load = load(List.of("daily", "broken"),

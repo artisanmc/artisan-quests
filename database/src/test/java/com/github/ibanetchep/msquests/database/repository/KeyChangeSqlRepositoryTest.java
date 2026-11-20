@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 
+import com.github.ibanetchep.msquests.core.repository.KeyChangeRepository.Left;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** On H2 only, so it runs without Docker. */
@@ -71,12 +73,12 @@ class KeyChangeSqlRepositoryTest {
         UUID sameKeyElsewhere = row("weekly", "mine", null);
         List<KeyChange> list = List.of(new KeyChange.Quest("daily", "mine", "dig"));
 
-        assertEquals(1, changes.apply(list).join());
+        assertEquals(1, changes.apply(list).join().moved());
 
         assertEquals("daily/dig", nameOf(moved));
         assertEquals("daily/fish", nameOf(other));
         assertEquals("weekly/mine", nameOf(sameKeyElsewhere));
-        assertEquals(0, changes.apply(list).join());
+        assertEquals(0, changes.apply(list).join().moved());
     }
 
     @Test
@@ -85,11 +87,11 @@ class KeyChangeSqlRepositoryTest {
         UUID stays = row("story", "fish", null);
         List<KeyChange> list = List.of(new KeyChange.QuestMoved("story", "mine", "side", "dig"));
 
-        assertEquals(1, changes.apply(list).join());
+        assertEquals(1, changes.apply(list).join().moved());
 
         assertEquals("side/dig", nameOf(moved));
         assertEquals("story/fish", nameOf(stays));
-        assertEquals(0, changes.apply(list).join());
+        assertEquals(0, changes.apply(list).join().moved());
     }
 
     @Test
@@ -102,13 +104,13 @@ class KeyChangeSqlRepositoryTest {
                 new KeyChange.Quest("everyday", "mine", "dig"),
                 new KeyChange.Group("daily", "everyday"));
 
-        assertEquals(4, changes.apply(list).join());
+        assertEquals(4, changes.apply(list).join().moved());
 
         assertEquals("everyday/dig", nameOf(quest));
         assertEquals("everyday/fish", nameOf(untouched));
         assertEquals(1, rotationsOf("everyday"));
         assertEquals(0, rotationsOf("daily"));
-        assertEquals(0, changes.apply(list).join());
+        assertEquals(0, changes.apply(list).join().moved());
     }
 
     @Test
@@ -123,13 +125,105 @@ class KeyChangeSqlRepositoryTest {
                 new KeyChange.GroupUid("01HGROUP", "everyday"),
                 new KeyChange.QuestUid("01HQUEST", "everyday", "dig"));
 
-        assertEquals(2, changes.apply(list).join());
+        assertEquals(2, changes.apply(list).join().moved());
 
         assertEquals("everyday/dig", nameOf(stale));
         assertEquals("everyday/dig", nameOf(current));
         assertEquals("daily/mine", nameOf(noUid));
         assertEquals(1, rotationsOf("everyday"));
-        assertEquals(0, changes.apply(list).join());
+        assertEquals(0, changes.apply(list).join().moved());
+    }
+
+    @Test
+    void rowsWrittenUnderTheFormerKeyAfterTheChangeAreLeftThereAndReported() {
+        UUID moved = row("daily", "mine", null);
+        List<KeyChange> list = List.of(new KeyChange.Quest("daily", "mine", "dig"));
+        changes.apply(list).join();
+
+        // Another server still loads the content from before the change: the actor has no "mine"
+        // there any more, so it hands them a new one.
+        UUID late = row("daily", "mine", null);
+        var again = changes.apply(list).join();
+
+        assertEquals(0, again.moved());
+        assertEquals(List.of(new Left("daily/mine", "daily/dig", 1)), again.left());
+        assertEquals("daily/dig", nameOf(moved));
+        assertEquals("daily/mine", nameOf(late), "not a second 'dig' for the same actor");
+    }
+
+    @Test
+    void aChangeSeenWithNoRowToMoveIsStillDone() {
+        List<KeyChange> list = List.of(new KeyChange.Group("daily", "everyday"));
+        assertEquals(0, changes.apply(list).join().moved());
+
+        UUID late = row("daily", "mine", null);
+        rotations.save(actor, "daily").join();
+        var again = changes.apply(list).join();
+
+        assertEquals(List.of(new Left("daily", "everyday", 2)), again.left());
+        assertEquals("daily/mine", nameOf(late));
+        assertEquals(1, rotationsOf("daily"));
+    }
+
+    @Test
+    void aChangeUndoneThenMadeAgainMovesTheRowsEachTime() {
+        UUID id = row("daily", "mine", null);
+        changes.apply(List.of(new KeyChange.Quest("daily", "mine", "dig"))).join();
+
+        assertEquals(1, changes.apply(List.of(new KeyChange.Quest("daily", "dig", "mine"))).join().moved());
+        assertEquals("daily/mine", nameOf(id));
+
+        assertEquals(1, changes.apply(List.of(new KeyChange.Quest("daily", "mine", "dig"))).join().moved());
+        assertEquals("daily/dig", nameOf(id));
+    }
+
+    @Test
+    void aFormerKeyGivenToANewQuestFollowsThatQuestWhenItChangesToo() {
+        row("daily", "mine", null);
+        changes.apply(List.of(new KeyChange.Quest("daily", "mine", "dig"))).join();
+
+        // "mine" is a new quest now, with rows of its own; later its key changes to "ore".
+        UUID fresh = row("daily", "mine", null);
+        assertEquals(1, changes.apply(List.of(new KeyChange.Quest("daily", "mine", "ore"))).join().moved());
+
+        assertEquals("daily/ore", nameOf(fresh));
+    }
+
+    @Test
+    void aSecondChangeOfTheSameQuestDoesNotReopenTheFirst() {
+        UUID id = row("daily", "mine", null);
+        changes.apply(List.of(new KeyChange.Quest("daily", "mine", "dig"))).join();
+        UUID late = row("daily", "mine", null);
+
+        // old_key: [mine, dig] on the quest now keyed "excavate".
+        List<KeyChange> list = List.of(
+                new KeyChange.Quest("daily", "mine", "excavate"),
+                new KeyChange.Quest("daily", "dig", "excavate"));
+        assertEquals(1, changes.apply(list).join().moved());
+
+        assertEquals("daily/excavate", nameOf(id));
+        assertEquals("daily/mine", nameOf(late));
+        // "dig" dropped from the list later: "mine" is still known to have become "excavate".
+        var later = changes.apply(List.of(new KeyChange.Quest("daily", "mine", "excavate"))).join();
+        assertEquals(0, later.moved());
+        assertEquals(List.of(new Left("daily/mine", "daily/excavate", 1)), later.left());
+    }
+
+    @Test
+    void aQuestChangeIsStillKnownAfterItsGroupChangedKey() {
+        row("daily", "mine", null);
+        changes.apply(List.of(new KeyChange.Quest("daily", "mine", "dig"))).join();
+        changes.apply(List.of(
+                new KeyChange.Group("daily", "everyday"),
+                new KeyChange.Quest("everyday", "mine", "dig"))).join();
+
+        UUID late = row("everyday", "mine", null);
+        var again = changes.apply(List.of(
+                new KeyChange.Group("daily", "everyday"),
+                new KeyChange.Quest("everyday", "mine", "dig"))).join();
+
+        assertEquals(0, again.moved());
+        assertEquals("everyday/mine", nameOf(late));
     }
 
     @Test

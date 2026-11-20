@@ -112,9 +112,14 @@ quests:
 ```
 
 When the file loads, the server moves the saved progress from the old key to the new one,
-before any player's quests are read. Loading it again moves nothing more, so `old_key` can
-stay; remove it once every server of the network has loaded the file. The editor writes it
+before any player's quests are read. This is done once per database: loading the file again,
+on this server or another, moves nothing more, so `old_key` can stay. The editor writes it
 when you change a quest's key.
+
+On a network, publish the file on every server that runs the group. A server that still
+loads the old key no longer finds the players' progress and starts the quest again for
+them; what they do there is not carried to the new key, and each server that has the new
+file logs how many saved rows are ignored for that reason.
 
 A file is refused when an `old_key` is still the key of another quest of the group (or of
 another group), or when two quests claim the same one: the progress would go to the wrong quest.

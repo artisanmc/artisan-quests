@@ -90,7 +90,7 @@ Root package: `com.github.ibanetchep.msquests.database`
 | `DbAccess` | HikariCP connection pool, JDBI instance, single-thread executor |
 | `DbCredentials` | Configuration record (H2 or MySQL) |
 | `MigrationManager` | Sequential migration system with a `schema_version` table |
-| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`), `AddReachedStageMigration` (v5, `artisan_quests_quest.reached_stage`) |
+| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`), `AddReachedStageMigration` (v5, `artisan_quests_quest.reached_stage`), `CreateKeyChangeLedgerMigration` (v6, `artisan_quests_key_change`) |
 | `SqlTables` | Table names of a layout: `LEGACY` (`msquests_*`) or `ARTISAN` (`artisan_quests_*`) |
 | `LegacyDataCopier` | One-time transactional copy from `msquests_*` to `artisan_quests_*` (see *Content source*) |
 | `repository/` | `SqlRepository` (async base), SQL implementations for Quest, PlayerProfile, Actor, Rotation; `ArtisanQuestSqlRepository` for `artisan_quests_quest/objective` |
@@ -118,6 +118,9 @@ artisan_quests_import_map (source, source_id, target, batch, imported_at) -- PK 
 
 -- v5
 artisan_quests_quest.reached_stage  -- key of the stage the quest stood on at its last save, NULL before
+
+-- v6
+artisan_quests_key_change (from_group, from_key, to_group, to_key, applied_at) -- PK (from_group, from_key); from_key '' for a group
 ```
 
 A row of `artisan_quests_quest` is resolved by `(group_key, quest_key)`, and a rotation by
@@ -672,13 +675,23 @@ right after):
 | `GroupUid(uid, group)` | the group's `uid` | rotations stored under the uid |
 | `QuestUid(uid, group, quest)` | a quest's `uid` | the keys of the rows whose `quest_uid` is that uid |
 
-`KeyChangeSqlRepository` applies them in one transaction (groups, then uids, then quests)
-and only touches rows still under a former key: applying them again changes nothing, which
-is why `old_key` may stay in the file, and why a server of a network that reloads late still
-moves the rows it wrote meanwhile. It first reads the keys in use (one pass per table) and
-runs a statement only for a former key some row carries. If the move fails, a reload is
-refused as a whole; at startup the groups that declare a former key are skipped, so none starts
-over next to progress it cannot find.
+`KeyChangeSqlRepository` applies them in one transaction (groups, then uids, then quests).
+A change of key is applied **once per database** and written to `artisan_quests_key_change`
+(one row per former place, a group or a quest of a group, with what it became). Found there,
+it moves nothing, which is why `old_key` may stay in the file. Rows that appear under the
+former key afterwards were written by a server of the network that still loads the content
+from before the change (the actor has no such quest there any more, so it hands them a new
+one): adding them would give the actor the same quest twice, so they stay where they are and
+each load logs how many are ignored (`KeyChangeRepository.Left`). What a player does on such a
+server between the two publications is therefore lost: the content of a group is to be
+published on every server that runs it. A place that becomes a key again can be left again
+(taking a key forgets that it was left), a change towards another destination than the one
+written is a new one, and a later change of the same quest (`old_key: [mine, dig]`) does not
+reopen the first. The rows a `uid` points to are outside that table and move whenever some
+are found elsewhere. The repository first reads the keys in use (one pass per table) and runs
+a statement only for a former key some row carries. If the move fails, a reload is refused as
+a whole; at startup the groups that declare a former key are skipped, so none starts over next
+to progress it cannot find.
 
 `uid` is what identified groups and quests before: optional now, and read as one more former
 key, so a server whose rows were keyed by uid moves them onto the keys at its first load,

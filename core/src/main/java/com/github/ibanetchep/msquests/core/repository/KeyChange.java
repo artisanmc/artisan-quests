@@ -7,8 +7,9 @@ package com.github.ibanetchep.msquests.core.repository;
  * changed says what it was ({@code old_key} in its Document), and a Document written when
  * rows were keyed by {@code uid} still says which one.
  *
- * <p>Applying one twice changes nothing more, so {@code old_key} stays in the file as long as
- * its author likes, and a server that reloads late still moves the rows it wrote meanwhile.
+ * <p>A change of key is applied once per database ({@link KeyChangeRepository}), so {@code old_key}
+ * stays in the file as long as its author likes: it is the written trace that the progress was
+ * to follow. The rows a uid points to are moved whenever some are found elsewhere.
  */
 public sealed interface KeyChange {
 

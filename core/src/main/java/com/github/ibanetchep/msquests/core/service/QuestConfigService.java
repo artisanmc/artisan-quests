@@ -152,9 +152,15 @@ public class QuestConfigService {
         return ((KeyChange.QuestUid) change).group();
     }
 
-    private void logMoved(Integer moved) {
-        if (moved != null && moved > 0) {
-            logger.info("Moved " + moved + " saved row(s) onto the changed keys of groups and quests.");
+    private void logMoved(KeyChangeRepository.Applied applied) {
+        if (applied == null) return;
+        if (applied.moved() > 0) {
+            logger.info("Moved " + applied.moved() + " saved row(s) onto the changed keys of groups and quests.");
+        }
+        for (KeyChangeRepository.Left left : applied.left()) {
+            logger.warning(left.rows() + " saved row(s) are still under '" + left.from() + "', which became '" + left.to()
+                    + "' earlier: they are ignored. A server that still loads the content from before the change"
+                    + " wrote them; publish the same content on every server.");
         }
     }
 
