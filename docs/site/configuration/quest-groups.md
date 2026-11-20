@@ -130,6 +130,10 @@ recorded keep the old key.
 
 ## Changing a quest players have started
 
+When you deploy a changed group from the editor (Artisan API 1.9.0 or later), the review lists
+what the change does to the players who have its quests in progress, with how many are
+concerned. A change that makes them lose something asks you to confirm first.
+
 What a player did or passed stays theirs when you change the quest:
 
 | You change | A player in the quest |

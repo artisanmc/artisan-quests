@@ -22,7 +22,10 @@ import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.ActorResolver;
 import com.github.ibanetchep.msquests.database.DbAccess;
+import com.github.ibanetchep.msquests.bukkit.document.QuestGroupChangeCheck;
+import com.github.ibanetchep.msquests.core.impact.ImpactSource;
 import com.github.ibanetchep.msquests.database.repository.QuestFiguresSqlSource;
+import com.github.ibanetchep.msquests.database.repository.QuestImpactSqlSource;
 import net.artisanmc.modules.api.ArtisanAPI;
 import net.artisanmc.modules.api.options.OptionEntry;
 import net.artisanmc.modules.api.ArtisanModule;
@@ -165,8 +168,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     public void onEnable(ArtisanAPI api) {
         this.api = api;
 
-        api.getDocumentKinds().register(new DocumentKindDeclaration(
-                QuestActions.GROUP_KIND, GROUP_DIR, List.of(GROUP_SCHEMA), null));
+        api.getDocumentKinds().register(groupKind(api));
         registerFolder(api);
         registerTemplate(api);
         registerJournal(api);
@@ -424,6 +426,29 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         } catch (IllegalStateException | IllegalArgumentException e) {
             plugin.getLogger().warning("The %" + QuestPlaceholders.NAMESPACE + "_*% placeholders are not available: "
                     + e.getMessage());
+        }
+    }
+
+    /** Artisan API whose Deploy review asks a kind what a changed file does ({@code DocumentChangeCheck}). */
+    static final String CHANGE_CHECK_API = "1.9.0";
+
+    /**
+     * The {@code quest_group} kind. On an Artisan that has the Deploy review's change check, a
+     * changed group says what it does to the quests in progress; an older one publishes as before.
+     */
+    private DocumentKindDeclaration groupKind(ArtisanAPI api) {
+        DocumentKindDeclaration kind = new DocumentKindDeclaration(
+                QuestActions.GROUP_KIND, GROUP_DIR, List.of(GROUP_SCHEMA), null);
+        if (!api.isCompatibleWith(CHANGE_CHECK_API)) return kind;
+        try {
+            DbAccess db = plugin.getDbAccess();
+            // Without the artisan_quests_* tables there is nothing to count: the reader's refusals only.
+            ImpactSource source = plugin.getContentSource() == ContentSource.ARTISAN && db != null
+                    ? new QuestImpactSqlSource(db) : ImpactSource.EMPTY;
+            return QuestGroupDeployCheck.on(kind, new QuestGroupChangeCheck(source));
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().warning("The Deploy review will not say what a quest change does to players: " + e);
+            return kind;
         }
     }
 
