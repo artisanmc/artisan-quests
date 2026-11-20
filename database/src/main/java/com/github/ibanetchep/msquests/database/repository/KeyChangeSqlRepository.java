@@ -1,7 +1,7 @@
 package com.github.ibanetchep.msquests.database.repository;
 
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
-import com.github.ibanetchep.msquests.core.repository.StoredRenameRepository;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
+import com.github.ibanetchep.msquests.core.repository.KeyChangeRepository;
 import com.github.ibanetchep.msquests.database.DbAccess;
 import org.jdbi.v3.core.Handle;
 
@@ -12,22 +12,22 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Moves the rows of {@code artisan_quests_quest} and {@code artisan_quests_rotation} onto the
- * keys their group and quest have now. Only rows still under a former name are touched, so
- * applying the same renames again changes nothing.
+ * keys their group and quest have now. Only rows still under a former key are touched, so
+ * applying the same changes again changes nothing.
  *
- * <p>The names in use are read first, in one pass over each table, and a statement only runs
- * for a former name some row still carries: a load whose renames are all done costs those two
+ * <p>The keys in use are read first, in one pass over each table, and a statement only runs
+ * for a former key some row still carries: a load whose changes are all done costs those two
  * reads, however many quests still say what they used to be called.
  */
-public class StoredRenameSqlRepository extends SqlRepository implements StoredRenameRepository {
+public class KeyChangeSqlRepository extends SqlRepository implements KeyChangeRepository {
 
-    public StoredRenameSqlRepository(DbAccess dbAccess) {
+    public KeyChangeSqlRepository(DbAccess dbAccess) {
         super(dbAccess);
     }
 
     @Override
-    public CompletableFuture<Integer> apply(List<StoredRename> renames) {
-        if (renames.isEmpty()) {
+    public CompletableFuture<Integer> apply(List<KeyChange> changes) {
+        if (changes.isEmpty()) {
             return CompletableFuture.completedFuture(0);
         }
         return supplyAsync(() -> getJdbi().inTransaction(handle -> {
@@ -40,8 +40,8 @@ public class StoredRenameSqlRepository extends SqlRepository implements StoredRe
                     .mapTo(String.class).list());
             Set<Name> names = names(handle);
             boolean groupMoved = false;
-            for (StoredRename rename : renames) {
-                if (rename instanceof StoredRename.Group group) {
+            for (KeyChange change : changes) {
+                if (change instanceof KeyChange.Group group) {
                     if (names.stream().anyMatch(name -> name.group().equals(group.from()))) {
                         moved += handle.createUpdate("UPDATE artisan_quests_quest SET group_key = :to WHERE group_key = :from")
                                 .bind("from", group.from())
@@ -50,7 +50,7 @@ public class StoredRenameSqlRepository extends SqlRepository implements StoredRe
                         groupMoved = true;
                     }
                     moved += rotations(handle, rotationGroups, group.from(), group.to());
-                } else if (rename instanceof StoredRename.GroupUid group) {
+                } else if (change instanceof KeyChange.GroupUid group) {
                     moved += rotations(handle, rotationGroups, group.uid(), group.group());
                 }
             }
@@ -59,8 +59,8 @@ public class StoredRenameSqlRepository extends SqlRepository implements StoredRe
             }
 
             boolean uidMoved = false;
-            for (StoredRename rename : renames) {
-                if (!(rename instanceof StoredRename.QuestUid quest)) continue;
+            for (KeyChange change : changes) {
+                if (!(change instanceof KeyChange.QuestUid quest)) continue;
                 boolean elsewhere = false;
                 for (Name name : names) {
                     if (name.uid().equals(quest.uid())
@@ -83,8 +83,8 @@ public class StoredRenameSqlRepository extends SqlRepository implements StoredRe
                 names = names(handle);
             }
 
-            for (StoredRename rename : renames) {
-                if (!(rename instanceof StoredRename.Quest quest)) continue;
+            for (KeyChange change : changes) {
+                if (!(change instanceof KeyChange.Quest quest)) continue;
                 if (names.stream().noneMatch(name -> name.group().equals(quest.group()) && name.quest().equals(quest.from()))) {
                     continue;
                 }

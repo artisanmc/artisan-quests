@@ -17,8 +17,8 @@ import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigRepository;
 import com.github.ibanetchep.msquests.core.repository.QuestRepository;
 import com.github.ibanetchep.msquests.core.repository.RotationRepository;
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
-import com.github.ibanetchep.msquests.core.repository.StoredRenameRepository;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
+import com.github.ibanetchep.msquests.core.repository.KeyChangeRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -38,11 +38,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * A quest is identified by its keys. The rows of a renamed group or quest are moved onto the
- * new keys before the groups are published, and a move that fails never lets a renamed group
+ * A quest is identified by its keys. The rows of a group or quest whose key changed are moved onto the
+ * new keys before the groups are published, and a move that fails never lets such a group
  * start over next to the progress it can no longer find.
  */
-class QuestRenameTest {
+class QuestKeyChangeTest {
 
     private static final Logger LOGGER = Logger.getAnonymousLogger();
 
@@ -52,14 +52,14 @@ class QuestRenameTest {
     @Test
     void theRowsAreMovedBeforeTheGroupsArePublished() {
         List<String> order = new ArrayList<>();
-        StoredRename rename = new StoredRename.Quest("daily", "mine", "dig");
-        StoredRenameRepository renames = applied -> {
-            assertEquals(List.of(rename), applied);
+        KeyChange change = new KeyChange.Quest("daily", "mine", "dig");
+        KeyChangeRepository changes = applied -> {
+            assertEquals(List.of(change), applied);
             order.add(registry.getQuestGroupConfigs().isEmpty() ? "moved before publish" : "moved after publish");
             return CompletableFuture.completedFuture(3);
         };
 
-        service(load(List.of("daily"), List.of(rename)), renames).reloadQuestGroups().join();
+        service(load(List.of("daily"), List.of(change)), changes).reloadQuestGroups().join();
 
         assertEquals(List.of("moved before publish"), order);
         assertTrue(registry.getQuestGroupConfigs().containsKey("daily"));
@@ -67,26 +67,26 @@ class QuestRenameTest {
 
     @Test
     void aGroupThatFailedToMapMovesNothing() {
-        List<StoredRename> applied = new ArrayList<>();
-        StoredRenameRepository renames = list -> {
+        List<KeyChange> applied = new ArrayList<>();
+        KeyChangeRepository changes = list -> {
             applied.addAll(list);
             return CompletableFuture.completedFuture(0);
         };
-        StoredRename kept = new StoredRename.Quest("daily", "mine", "dig");
+        KeyChange kept = new KeyChange.Quest("daily", "mine", "dig");
         QuestConfigLoad load = load(List.of("daily", "broken"),
-                List.of(kept, new StoredRename.Group("old_broken", "broken")));
+                List.of(kept, new KeyChange.Group("old_broken", "broken")));
         when(mapper.toEntity(load.groups().get("broken"))).thenThrow(new IllegalArgumentException("bad cron"));
 
-        service(load, renames).loadQuestGroups().join();
+        service(load, changes).loadQuestGroups().join();
 
         assertEquals(List.of(kept), applied);
         assertEquals(java.util.Set.of("daily"), registry.getQuestGroupConfigs().keySet());
     }
 
     @Test
-    void atStartupARenamedGroupIsSkippedWhenItsRowsCouldNotBeMoved() {
-        StoredRenameRepository failing = list -> CompletableFuture.failedFuture(new IllegalStateException("database down"));
-        QuestConfigLoad load = load(List.of("daily", "weekly"), List.of(new StoredRename.Quest("daily", "mine", "dig")));
+    void atStartupAGroupWithAFormerKeyIsSkippedWhenItsRowsCouldNotBeMoved() {
+        KeyChangeRepository failing = list -> CompletableFuture.failedFuture(new IllegalStateException("database down"));
+        QuestConfigLoad load = load(List.of("daily", "weekly"), List.of(new KeyChange.Quest("daily", "mine", "dig")));
 
         service(load, failing).loadQuestGroups().join();
 
@@ -96,8 +96,8 @@ class QuestRenameTest {
     @Test
     void aReloadIsRefusedWhenTheRowsCouldNotBeMoved() {
         registry.registerQuestGroupConfig(group("before"));
-        StoredRenameRepository failing = list -> CompletableFuture.failedFuture(new IllegalStateException("database down"));
-        QuestConfigLoad load = load(List.of("daily"), List.of(new StoredRename.Group("old", "daily")));
+        KeyChangeRepository failing = list -> CompletableFuture.failedFuture(new IllegalStateException("database down"));
+        QuestConfigLoad load = load(List.of("daily"), List.of(new KeyChange.Group("old", "daily")));
 
         CompletionException error = assertThrows(CompletionException.class,
                 () -> service(load, failing).reloadQuestGroups().join());
@@ -143,13 +143,13 @@ class QuestRenameTest {
 
     // ----------------------------------------------------------------- helpers
 
-    private QuestConfigService service(QuestConfigLoad load, StoredRenameRepository renames) {
+    private QuestConfigService service(QuestConfigLoad load, KeyChangeRepository changes) {
         QuestConfigRepository repository = () -> CompletableFuture.completedFuture(load);
-        return new QuestConfigService(LOGGER, registry, repository, mapper, ConditionChecker.ALWAYS, renames);
+        return new QuestConfigService(LOGGER, registry, repository, mapper, ConditionChecker.ALWAYS, changes);
     }
 
     /** A load of these groups, each mapped to an empty group of the same key. */
-    private QuestConfigLoad load(List<String> keys, List<StoredRename> renames) {
+    private QuestConfigLoad load(List<String> keys, List<KeyChange> changes) {
         Map<String, QuestGroupConfigDTO> groups = new java.util.LinkedHashMap<>();
         for (String key : keys) {
             QuestGroupConfigDTO dto = mock(QuestGroupConfigDTO.class);
@@ -157,7 +157,7 @@ class QuestRenameTest {
             when(mapper.toEntity(dto)).thenReturn(group(key));
             groups.put(key, dto);
         }
-        return new QuestConfigLoad(groups, List.of(), renames);
+        return new QuestConfigLoad(groups, List.of(), changes);
     }
 
     private static QuestGroupConfig group(String key) {

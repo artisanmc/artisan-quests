@@ -211,13 +211,13 @@ describe("identity", () => {
     expect("old_key" in out[1]!).toBe(false);
   });
 
-  it("writes old_key after key when a quest of the file is renamed", () => {
+  it("writes old_key after key when the key of a quest of the file changes", () => {
     const group = parse(handWritten);
     group.quests[0]!.key = "dig";
     const out = written(group);
     expect(Object.keys(out[0]!).slice(0, 2)).toEqual(["key", "old_key"]);
     expect(out[0]!.old_key).toBe("mine");
-    // Read again, renamed again: both former keys stay, in order.
+    // Read again, changed again: both former keys stay, in order.
     const again = parse(serializeQuestGroup(group, project));
     again.quests[0]!.key = "excavate";
     expect(written(again)[0]!.old_key).toEqual(["mine", "dig"]);
@@ -235,7 +235,7 @@ describe("identity", () => {
     expect(added.oldKeys).toEqual([]);
   });
 
-  it("remembers a key left while open, so renaming back keeps what was published in between", () => {
+  it("remembers a key left while open, so going back to it keeps what was published in between", () => {
     const group = parse(handWritten);
     const quest = group.quests[0]!;
     quest.key = "dig";

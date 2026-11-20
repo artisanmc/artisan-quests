@@ -313,7 +313,7 @@ function questRest(q: Raw): Raw {
   return rest;
 }
 
-// ------------------------------------------------------------------ renames
+// ------------------------------------------------------------------ key changes
 
 /** `old_key` as written: one key or a list. */
 function keyList(value: unknown): string[] {

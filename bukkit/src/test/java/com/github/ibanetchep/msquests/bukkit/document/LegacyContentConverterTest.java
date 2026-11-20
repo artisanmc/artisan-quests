@@ -69,7 +69,7 @@ class LegacyContentConverterTest {
                 assertNull(plan.map().quest(original.key(), quest.key()).uid());
             }
         }
-        assertEquals(java.util.List.of(), docs.renames());
+        assertEquals(java.util.List.of(), docs.keyChanges());
         assertFalse(Files.readString(project.resolve("quest_groups/daily.yaml")).contains("uid:"));
         assertEquals(original("daily").quests().size(), docs.groups().get("daily").quests().size());
     }

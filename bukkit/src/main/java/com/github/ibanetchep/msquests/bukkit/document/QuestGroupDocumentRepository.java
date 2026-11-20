@@ -5,7 +5,7 @@ import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestGroupConfigDTO;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigRepository;
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -40,7 +40,7 @@ import java.util.concurrent.CompletableFuture;
  * </ul>
  *
  * <p>The former names of the groups that load ({@code old_key}, {@code uid}) come back as
- * {@link QuestConfigLoad#renames()}.
+ * {@link QuestConfigLoad#keyChanges()}.
  */
 public final class QuestGroupDocumentRepository implements QuestConfigRepository {
 
@@ -75,7 +75,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
         Map<String, QuestGroupConfigDTO> groups = new LinkedHashMap<>();
         Map<String, String> uidOwners = new HashMap<>();
         Map<String, String> oldGroupOwners = new HashMap<>();
-        List<StoredRename> renames = new ArrayList<>();
+        List<KeyChange> changes = new ArrayList<>();
         Map<String, String> langs = new HashMap<>();
         for (Map.Entry<String, List<GroupFile>> entry : byKey.entrySet()) {
             String key = entry.getKey();
@@ -89,7 +89,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
             GroupFile file = files.get(0);
 
             QuestGroupConfigDTO group;
-            List<StoredRename> groupRenames;
+            List<KeyChange> groupChanges;
             try {
                 String lang = langs.computeIfAbsent(file.project(), this::defaultLang);
                 String source = projects.read(file.project(), DIR + "/" + file.name());
@@ -99,7 +99,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
                 }
                 Map<String, Object> doc = DocumentYaml.parse(source);
                 group = QuestGroupDocumentReader.read(key, doc, lang).withSourceProject(file.project());
-                groupRenames = QuestGroupDocumentReader.renames(key, doc);
+                groupChanges = QuestGroupDocumentReader.keyChanges(key, doc);
             } catch (IOException | RuntimeException e) {
                 failures.add(file.path() + ": " + e.getMessage());
                 continue;
@@ -114,8 +114,8 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
                 }
             }
             Map<String, String> claimedOld = new HashMap<>();
-            for (StoredRename rename : groupRenames) {
-                if (clash != null || !(rename instanceof StoredRename.Group old)) continue;
+            for (KeyChange change : groupChanges) {
+                if (clash != null || !(change instanceof KeyChange.Group old)) continue;
                 if (byKey.containsKey(old.from())) {
                     clash = "old_key: '" + old.from() + "' is still the key of a group: remove it from old_key,"
                             + " or the progress of '" + old.from() + "' would move to '" + key + "'";
@@ -131,10 +131,10 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
             }
             uidOwners.putAll(claimed);
             oldGroupOwners.putAll(claimedOld);
-            renames.addAll(groupRenames);
+            changes.addAll(groupChanges);
             groups.put(key, group);
         }
-        return new QuestConfigLoad(groups, failures, renames);
+        return new QuestConfigLoad(groups, failures, changes);
     }
 
     /**

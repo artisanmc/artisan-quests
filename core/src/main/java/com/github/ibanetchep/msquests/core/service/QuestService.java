@@ -111,8 +111,8 @@ public class QuestService {
 
     /**
      * The config a stored quest belongs to, or null (logged once) when it is no longer loaded.
-     * A row names its quest by {@code (group key, quest key)}; the rows of a renamed quest were
-     * moved onto its new key before the configs were published (see {@code StoredRename}).
+     * A row names its quest by {@code (group key, quest key)}; the rows of a quest whose key changed
+     * were moved onto the new one before the configs were published (see {@code KeyChange}).
      */
     private QuestConfig resolveConfig(QuestDTO questDTO) {
         QuestGroupConfig questGroupConfig = questConfigRegistry.getQuestGroupConfigs().get(questDTO.groupKey());

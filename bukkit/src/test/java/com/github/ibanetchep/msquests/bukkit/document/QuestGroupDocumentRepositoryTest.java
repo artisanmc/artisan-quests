@@ -4,7 +4,7 @@ import com.github.ibanetchep.msquests.bukkit.repository.QuestConfigYamlRepositor
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestGroupConfigDTO;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -299,11 +299,11 @@ class QuestGroupDocumentRepositoryTest {
         QuestGroupConfigDTO daily = load.groups().get("daily");
         assertNull(daily.uid());
         assertNull(daily.quests().getFirst().uid());
-        assertEquals(java.util.List.of(), load.renames());
+        assertEquals(java.util.List.of(), load.keyChanges());
     }
 
     @Test
-    void oldKeyOfAQuestAndOfTheGroupBecomeRenames() throws Exception {
+    void oldKeyOfAQuestAndOfTheGroupBecomeKeyChanges() throws Exception {
         Files.writeString(project.resolve("quest_groups/everyday.yaml"),
                 handWritten("old_key: daily\n", "    old_key: [dig, excavate]\n"));
 
@@ -311,18 +311,18 @@ class QuestGroupDocumentRepositoryTest {
 
         assertEquals(java.util.List.of(), load.failures());
         assertEquals(java.util.List.of(
-                new StoredRename.Group("daily", "everyday"),
-                new StoredRename.Quest("everyday", "dig", "mine"),
-                new StoredRename.Quest("everyday", "excavate", "mine")), load.renames());
+                new KeyChange.Group("daily", "everyday"),
+                new KeyChange.Quest("everyday", "dig", "mine"),
+                new KeyChange.Quest("everyday", "excavate", "mine")), load.keyChanges());
     }
 
     @Test
-    void theUidsOfAnOlderDocumentBecomeRenames() throws Exception {
+    void theUidsOfAnOlderDocumentBecomeKeyChanges() throws Exception {
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", ""));
 
         assertEquals(java.util.List.of(
-                new StoredRename.GroupUid("G1", "daily"),
-                new StoredRename.QuestUid("Q1", "daily", "mine")), load().renames());
+                new KeyChange.GroupUid("G1", "daily"),
+                new KeyChange.QuestUid("Q1", "daily", "mine")), load().keyChanges());
     }
 
     @Test
@@ -338,7 +338,7 @@ class QuestGroupDocumentRepositoryTest {
         assertTrue(failures.contains("quest_groups/a.yaml: quests[0].old_key: 'fish' is still the key of a quest"), failures);
         assertTrue(failures.contains("quest_groups/b.yaml: quests[1].old_key: 'dig' is already the old_key of 'mine'"), failures);
         assertEquals(java.util.Set.of("c"), load.groups().keySet(), "a quest's own key in old_key is ignored");
-        assertEquals(java.util.List.of(), load.renames());
+        assertEquals(java.util.List.of(), load.keyChanges());
     }
 
     @Test
@@ -353,7 +353,7 @@ class QuestGroupDocumentRepositoryTest {
         assertTrue(failures.contains("quest_groups/a.yaml: old_key: 'b' is still the key of a group"), failures);
         assertTrue(failures.contains("quest_groups/c.yaml: old_key: 'former' is already the old_key of group 'b'"), failures);
         assertEquals(java.util.Set.of("b"), load.groups().keySet());
-        assertEquals(java.util.List.of(new StoredRename.Group("former", "b")), load.renames());
+        assertEquals(java.util.List.of(new KeyChange.Group("former", "b")), load.keyChanges());
     }
 
     @Test
@@ -364,7 +364,7 @@ class QuestGroupDocumentRepositoryTest {
         QuestConfigLoad load = load();
 
         assertEquals(1, load.failures().size());
-        assertEquals(java.util.List.of(), load.renames());
+        assertEquals(java.util.List.of(), load.keyChanges());
     }
 
     // ------------------------------------------------------------ every project

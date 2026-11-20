@@ -8,16 +8,16 @@ import java.util.Map;
 /**
  * Outcome of reading every quest group file: the groups that parsed, and one message per file
  * that did not. A reload uses the failures to refuse the whole new state instead of silently
- * dropping the broken groups. {@code renames} are the former names of the groups that parsed:
+ * dropping the broken groups. {@code keyChanges} are the former keys of the groups that parsed:
  * the stored rows are moved onto the current keys before the groups are used.
  */
 public record QuestConfigLoad(Map<String, QuestGroupConfigDTO> groups, List<String> failures,
-                              List<StoredRename> renames) {
+                              List<KeyChange> keyChanges) {
 
     public QuestConfigLoad {
         groups = Map.copyOf(groups);
         failures = List.copyOf(failures);
-        renames = List.copyOf(renames);
+        keyChanges = List.copyOf(keyChanges);
     }
 
     public QuestConfigLoad(Map<String, QuestGroupConfigDTO> groups, List<String> failures) {

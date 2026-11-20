@@ -2,7 +2,7 @@ package com.github.ibanetchep.msquests.database.repository;
 
 import com.github.ibanetchep.msquests.core.dto.QuestDTO;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestStatus;
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
 import com.github.ibanetchep.msquests.database.DbAccess;
 import com.github.ibanetchep.msquests.database.DbCredentials;
 import com.github.ibanetchep.msquests.database.SqlTables;
@@ -19,7 +19,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** On H2 only, so it runs without Docker. */
-class StoredRenameSqlRepositoryTest {
+class KeyChangeSqlRepositoryTest {
 
     @TempDir
     File tempDir;
@@ -27,7 +27,7 @@ class StoredRenameSqlRepositoryTest {
     private DbAccess db;
     private ArtisanQuestSqlRepository quests;
     private RotationSqlRepository rotations;
-    private StoredRenameSqlRepository renames;
+    private KeyChangeSqlRepository changes;
     private final UUID actor = UUID.randomUUID();
 
     @BeforeEach
@@ -38,7 +38,7 @@ class StoredRenameSqlRepositoryTest {
                 "INSERT INTO artisan_quests_actor (id, actor_type) VALUES (?, 'player')", actor.toString()));
         quests = new ArtisanQuestSqlRepository(db);
         rotations = new RotationSqlRepository(db, SqlTables.ARTISAN);
-        renames = new StoredRenameSqlRepository(db);
+        changes = new KeyChangeSqlRepository(db);
     }
 
     @AfterEach
@@ -65,64 +65,64 @@ class StoredRenameSqlRepositoryTest {
     }
 
     @Test
-    void aRenamedQuestKeepsItsRowsAndApplyingItAgainChangesNothing() {
-        UUID renamed = row("daily", "mine", null);
+    void aQuestWhoseKeyChangedKeepsItsRowsAndApplyingItAgainChangesNothing() {
+        UUID moved = row("daily", "mine", null);
         UUID other = row("daily", "fish", null);
         UUID sameKeyElsewhere = row("weekly", "mine", null);
-        List<StoredRename> list = List.of(new StoredRename.Quest("daily", "mine", "dig"));
+        List<KeyChange> list = List.of(new KeyChange.Quest("daily", "mine", "dig"));
 
-        assertEquals(1, renames.apply(list).join());
+        assertEquals(1, changes.apply(list).join());
 
-        assertEquals("daily/dig", nameOf(renamed));
+        assertEquals("daily/dig", nameOf(moved));
         assertEquals("daily/fish", nameOf(other));
         assertEquals("weekly/mine", nameOf(sameKeyElsewhere));
-        assertEquals(0, renames.apply(list).join());
+        assertEquals(0, changes.apply(list).join());
     }
 
     @Test
-    void aRenamedGroupTakesItsQuestsAndRotationsAndARenamedQuestIsFoundUnderIt() {
+    void aGroupWhoseKeyChangedTakesItsQuestsAndRotationsAndAQuestIsFoundUnderIt() {
         UUID quest = row("daily", "mine", null);
         UUID untouched = row("daily", "fish", null);
         rotations.save(actor, "daily").join();
         // Listed quest first: the order of the list does not matter.
-        List<StoredRename> list = List.of(
-                new StoredRename.Quest("everyday", "mine", "dig"),
-                new StoredRename.Group("daily", "everyday"));
+        List<KeyChange> list = List.of(
+                new KeyChange.Quest("everyday", "mine", "dig"),
+                new KeyChange.Group("daily", "everyday"));
 
-        assertEquals(4, renames.apply(list).join());
+        assertEquals(4, changes.apply(list).join());
 
         assertEquals("everyday/dig", nameOf(quest));
         assertEquals("everyday/fish", nameOf(untouched));
         assertEquals(1, rotationsOf("everyday"));
         assertEquals(0, rotationsOf("daily"));
-        assertEquals(0, renames.apply(list).join());
+        assertEquals(0, changes.apply(list).join());
     }
 
     @Test
     void rowsWrittenForAUidTakeTheKeysOfTheQuestThatCarriesIt() {
-        // The names last saved are stale: the quest and its group were renamed in the editor
+        // The names last saved are stale: the quest and its group had their keys changed in the editor
         // while rows were resolved by uid.
         UUID stale = row("daily", "mine", "01HQUEST");
         UUID current = row("everyday", "dig", "01HQUEST");
         UUID noUid = row("daily", "mine", null);
         rotations.save(actor, "01HGROUP").join();
-        List<StoredRename> list = List.of(
-                new StoredRename.GroupUid("01HGROUP", "everyday"),
-                new StoredRename.QuestUid("01HQUEST", "everyday", "dig"));
+        List<KeyChange> list = List.of(
+                new KeyChange.GroupUid("01HGROUP", "everyday"),
+                new KeyChange.QuestUid("01HQUEST", "everyday", "dig"));
 
-        assertEquals(2, renames.apply(list).join());
+        assertEquals(2, changes.apply(list).join());
 
         assertEquals("everyday/dig", nameOf(stale));
         assertEquals("everyday/dig", nameOf(current));
         assertEquals("daily/mine", nameOf(noUid));
         assertEquals(1, rotationsOf("everyday"));
-        assertEquals(0, renames.apply(list).join());
+        assertEquals(0, changes.apply(list).join());
     }
 
     @Test
     void aSaveNeverMovesARow() {
         UUID id = row("daily", "mine", null);
-        renames.apply(List.of(new StoredRename.Quest("daily", "mine", "dig"))).join();
+        changes.apply(List.of(new KeyChange.Quest("daily", "mine", "dig"))).join();
 
         // The quest still in memory under its former name is saved before the actors are rebuilt.
         quests.save(new QuestDTO(id, "mine", "daily", actor, QuestStatus.COMPLETED, 5_000L, 1_000L, 1_000L, new HashMap<>())).join();

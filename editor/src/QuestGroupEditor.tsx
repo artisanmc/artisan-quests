@@ -1214,7 +1214,7 @@ function QuestView({
   const editQuest = (recipe: (q: Quest) => void, texts?: TextWrite[]) =>
     edit((g) => recipe(g.quests[index]!), texts);
   const keyTaken = group.quests.some((q, i) => i !== index && q.key === quest.key);
-  // The key the field had when it took the focus: what the quest is renamed from.
+  // The key the field had when it took the focus: the key the quest is leaving.
   const keyBefore = useRef(quest.key);
   const formerKeys = oldKeysOf(quest, new Set(group.quests.map((q) => q.key)));
   const durationBad =

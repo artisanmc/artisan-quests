@@ -111,7 +111,7 @@ class ContentMigrationTest {
         assertEquals("mine_stone_64", stored.questKey());
         assertEquals("", stored.questUid());
         assertNotNull(daily.getQuest("mine_stone_64"));
-        assertEquals(java.util.List.of(), documents.renames());
+        assertEquals(java.util.List.of(), documents.keyChanges());
         assertEquals(37, stored.objectives().get("obj_1").progress());
         assertEquals("stage_1", stored.objectives().get("obj_1").stageKey());
 

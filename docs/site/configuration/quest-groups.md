@@ -36,7 +36,7 @@ quests:
 
 | Key | Type | Effect |
 |---|---|---|
-| `old_key` | key or list | What the group was called before its file was renamed. See [Renaming](#renaming). |
+| `old_key` | key or list | The file name the group had before. See [Changing a key](#changing-a-key). |
 | `title`, `description` | text | By language. |
 | `actor_type` | `player`, `global`, `guild` | Who owns the quests. `guild` needs ArtisanGuildQuests. |
 | `reset.cron`, `reset.timezone` | cron, zone | When the period ends and quests reset. |
@@ -86,7 +86,7 @@ quests:
 | Key | Type | Effect |
 |---|---|---|
 | `key` | | Its key, unique in the group. Progress is stored against the group key and this key. |
-| `old_key` | key or list | The keys it had before. See [Renaming](#renaming). |
+| `old_key` | key or list | The keys it had before. See [Changing a key](#changing-a-key). |
 | `title`, `description` | text | By language. |
 | `stages[]` | list | Done in order; each has a `key` and `objectives`. |
 | `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys. |
@@ -96,10 +96,12 @@ quests:
 Objective types: `block_break`, `breed_animal`, `craft_item`, `harvest_crop`, `deliver_item`,
 `kill_entity`, `execute_command`, `fishing`, `placeholder`, `travel`.
 
-## Renaming
+## Changing a key
 
 A group is identified by its file name and a quest by its `key`: that is what players'
-progress is stored against. To rename one without losing progress, say what it was called:
+progress is stored against. A key is an identifier, not a name: what players read is the
+`title`, which you can change freely. Changing a key is rarely needed; to do it without
+losing progress, say what the key was:
 
 ```yaml
 # quest_groups/everyday.yaml, formerly daily.yaml
@@ -109,7 +111,7 @@ quests:
     old_key: mine          # or a list: [mine, excavate]
 ```
 
-When the file loads, the server moves the saved progress from the old name to the new one,
+When the file loads, the server moves the saved progress from the old key to the new one,
 before any player's quests are read. Loading it again moves nothing more, so `old_key` can
 stay; remove it once every server of the network has loaded the file. The editor writes it
 when you change a quest's key.
@@ -117,8 +119,8 @@ when you change a quest's key.
 A file is refused when an `old_key` is still the key of another quest of the group (or of
 another group), or when two quests claim the same one: the progress would go to the wrong quest.
 
-Renaming a key without `old_key` starts the quest over for everyone. The statistics already
-recorded keep the old name.
+Changing a key without `old_key` starts the quest over for everyone. The statistics already
+recorded keep the old key.
 
 Files written by earlier versions carry a `uid` on the group and on each quest. It is still
 read: progress stored under it moves to the keys the first time the file loads. New files

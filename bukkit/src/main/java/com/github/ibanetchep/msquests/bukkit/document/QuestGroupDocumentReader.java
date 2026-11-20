@@ -1,7 +1,7 @@
 package com.github.ibanetchep.msquests.bukkit.document;
 
 import com.github.ibanetchep.msquests.core.quest.config.QuestGiver;
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
 import com.github.ibanetchep.msquests.core.dto.DistributionConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigHooksDTO;
@@ -32,8 +32,9 @@ import java.util.Set;
  * shared. The group key is the Document's id (its file name).
  *
  * <p>A group and a quest are identified by their key, which is also what the database stores.
- * Renaming one keeps its progress when the Document says what it was called: {@code old_key}
- * (one key or a list) on the group or the quest. {@link #renames} turns these into the moves
+ * A key is an identifier, not a name (that is the title): changing one is rare, and keeps the
+ * progress when the Document says what the key was: {@code old_key}
+ * (one key or a list) on the group or the quest. {@link #keyChanges} turns these into the moves
  * the storage applies before the group is used; the field may stay or go once every server
  * has loaded it. {@code uid}, the identity of Documents written before, is optional and read
  * as one more former name.
@@ -181,13 +182,13 @@ public final class QuestGroupDocumentReader {
      * The former names this Document declares, as moves onto its current keys. Call it on a
      * Document {@link #read} accepted.
      */
-    public static List<StoredRename> renames(String groupKey, Map<String, Object> doc) {
-        List<StoredRename> renames = new ArrayList<>();
+    public static List<KeyChange> keyChanges(String groupKey, Map<String, Object> doc) {
+        List<KeyChange> changes = new ArrayList<>();
         for (String old : oldKeys(doc, "")) {
-            if (!old.equals(groupKey)) renames.add(new StoredRename.Group(old, groupKey));
+            if (!old.equals(groupKey)) changes.add(new KeyChange.Group(old, groupKey));
         }
         String uid = optionalString(doc, "uid", "");
-        if (uid != null && !uid.equals(groupKey)) renames.add(new StoredRename.GroupUid(uid, groupKey));
+        if (uid != null && !uid.equals(groupKey)) changes.add(new KeyChange.GroupUid(uid, groupKey));
 
         List<Object> questItems = list(doc.get("quests"), "quests");
         for (int i = 0; i < questItems.size(); i++) {
@@ -195,12 +196,12 @@ public final class QuestGroupDocumentReader {
             Map<String, Object> quest = map(questItems.get(i), path);
             String key = requiredString(quest, "key", path);
             String questUid = optionalString(quest, "uid", path);
-            if (questUid != null) renames.add(new StoredRename.QuestUid(questUid, groupKey, key));
+            if (questUid != null) changes.add(new KeyChange.QuestUid(questUid, groupKey, key));
             for (String old : oldKeys(quest, path)) {
-                if (!old.equals(key)) renames.add(new StoredRename.Quest(groupKey, old, key));
+                if (!old.equals(key)) changes.add(new KeyChange.Quest(groupKey, old, key));
             }
         }
-        return renames;
+        return changes;
     }
 
     /**

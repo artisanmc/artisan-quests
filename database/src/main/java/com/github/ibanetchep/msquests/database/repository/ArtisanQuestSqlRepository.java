@@ -16,8 +16,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Quests in {@code artisan_quests_quest} / {@code artisan_quests_objective}, used once quests come
  * from {@code quest_group} Documents. A quest row names its config by {@code (group_key,
- * quest_key)}, written once: a rename moves the rows ({@link StoredRenameSqlRepository}), a save
- * never does, so a quest still in memory under its former name cannot undo a rename.
+ * quest_key)}, written once: a key change moves the rows ({@link KeyChangeSqlRepository}), a save
+ * never does, so a quest still in memory under its former key cannot undo one.
  * {@code quest_uid} is the uid of a Document that still carries one (else empty), kept for the
  * jar that resolved rows by it.
  *

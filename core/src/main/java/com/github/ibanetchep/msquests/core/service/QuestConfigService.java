@@ -11,8 +11,8 @@ import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigRepository;
-import com.github.ibanetchep.msquests.core.repository.StoredRename;
-import com.github.ibanetchep.msquests.core.repository.StoredRenameRepository;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
+import com.github.ibanetchep.msquests.core.repository.KeyChangeRepository;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -31,7 +31,7 @@ public class QuestConfigService {
     private final QuestConfigRepository questConfigRepository;
     private final QuestGroupMapper questGroupMapper;
     private final ConditionChecker conditionChecker;
-    private final StoredRenameRepository renameRepository;
+    private final KeyChangeRepository keyChangeRepository;
 
     public QuestConfigService(
             Logger logger,
@@ -49,12 +49,12 @@ public class QuestConfigService {
             QuestGroupMapper questGroupMapper,
             ConditionChecker conditionChecker
     ) {
-        this(logger, questRegistry, questConfigRepository, questGroupMapper, conditionChecker, StoredRenameRepository.NONE);
+        this(logger, questRegistry, questConfigRepository, questGroupMapper, conditionChecker, KeyChangeRepository.NONE);
     }
 
     /**
      * @param conditionChecker checks the loaded requirements and objective conditions, to warn about bad ones
-     * @param renameRepository moves the stored rows of renamed groups and quests onto their new keys
+     * @param keyChangeRepository moves the stored rows of groups and quests whose key changed onto the new one
      */
     public QuestConfigService(
             Logger logger,
@@ -62,10 +62,10 @@ public class QuestConfigService {
             QuestConfigRepository questConfigRepository,
             QuestGroupMapper questGroupMapper,
             ConditionChecker conditionChecker,
-            StoredRenameRepository renameRepository
+            KeyChangeRepository keyChangeRepository
     ) {
         this.conditionChecker = conditionChecker;
-        this.renameRepository = renameRepository;
+        this.keyChangeRepository = keyChangeRepository;
         this.logger = logger;
         this.questRegistry = questRegistry;
         this.questConfigRepository = questConfigRepository;
@@ -74,8 +74,8 @@ public class QuestConfigService {
 
     /**
      * Startup load: every group that parses is registered, broken files are logged and skipped,
-     * so one bad file does not leave the server without quests. The rows of renamed groups and
-     * quests are moved first; if that fails, the groups that say they were renamed are skipped
+     * so one bad file does not leave the server without quests. The rows of groups and quests whose key
+     * changed are moved first; if that fails, the groups that declare a former key are skipped
      * too, rather than started over next to the progress they would no longer find.
      */
     public CompletableFuture<Void> loadQuestGroups() {
@@ -83,16 +83,16 @@ public class QuestConfigService {
                 .thenCompose(load -> {
                     List<String> failures = new ArrayList<>(load.failures());
                     List<QuestGroupConfig> groups = mapGroups(load, failures);
-                    List<StoredRename> renames = renamesOf(load, groups);
-                    return renameRepository.apply(renames)
+                    List<KeyChange> changes = changesOf(load, groups);
+                    return keyChangeRepository.apply(changes)
                             .handle((moved, e) -> {
                                 if (e != null) {
-                                    logger.log(Level.SEVERE, "Moving the saved progress of renamed quests failed", e);
-                                    Set<String> renamed = new HashSet<>();
-                                    renames.forEach(rename -> renamed.add(groupOf(rename)));
-                                    groups.removeIf(group -> renamed.contains(group.getKey()));
-                                    renamed.forEach(key -> failures.add("group '" + key
-                                            + "': the saved progress of its renamed quests could not be moved"));
+                                    logger.log(Level.SEVERE, "Moving the saved progress onto changed keys failed", e);
+                                    Set<String> changed = new HashSet<>();
+                                    changes.forEach(change -> changed.add(groupOf(change)));
+                                    groups.removeIf(group -> changed.contains(group.getKey()));
+                                    changed.forEach(key -> failures.add("group '" + key
+                                            + "': the saved progress could not be moved onto its changed keys"));
                                 } else {
                                     logMoved(moved);
                                 }
@@ -109,7 +109,7 @@ public class QuestConfigService {
 
     /**
      * Admin reload: the new state replaces the current one only if every file parses and maps,
-     * and the rows of renamed groups and quests could be moved. Otherwise nothing changes and
+     * and the rows of groups and quests whose key changed could be moved. Otherwise nothing changes and
      * the returned future fails with the list of problems, so the server keeps running the
      * configs it had instead of losing the broken groups.
      */
@@ -123,12 +123,12 @@ public class QuestConfigService {
                 throw new CompletionException(new QuestConfigReloadException(failures));
             }
 
-            return renameRepository.apply(renamesOf(load, groups))
+            return keyChangeRepository.apply(changesOf(load, groups))
                     .handle((moved, e) -> {
                         if (e != null) {
-                            logger.log(Level.SEVERE, "Quest reload refused: moving the saved progress of renamed quests failed", e);
+                            logger.log(Level.SEVERE, "Quest reload refused: moving the saved progress onto changed keys failed", e);
                             throw new CompletionException(new QuestConfigReloadException(List.of(
-                                    "the saved progress of renamed quests could not be moved: " + e.getMessage())));
+                                    "the saved progress could not be moved onto the changed keys: " + e.getMessage())));
                         }
                         logMoved(moved);
                         publish(groups);
@@ -137,23 +137,23 @@ public class QuestConfigService {
         });
     }
 
-    /** The renames of the groups that will be published: a group that failed to map moves nothing. */
-    private static List<StoredRename> renamesOf(QuestConfigLoad load, List<QuestGroupConfig> groups) {
+    /** The key changes of the groups that will be published: a group that failed to map moves nothing. */
+    private static List<KeyChange> changesOf(QuestConfigLoad load, List<QuestGroupConfig> groups) {
         Set<String> keys = new HashSet<>();
         groups.forEach(group -> keys.add(group.getKey()));
-        return load.renames().stream().filter(rename -> keys.contains(groupOf(rename))).toList();
+        return load.keyChanges().stream().filter(change -> keys.contains(groupOf(change))).toList();
     }
 
-    private static String groupOf(StoredRename rename) {
-        if (rename instanceof StoredRename.Group group) return group.to();
-        if (rename instanceof StoredRename.Quest quest) return quest.group();
-        if (rename instanceof StoredRename.GroupUid group) return group.group();
-        return ((StoredRename.QuestUid) rename).group();
+    private static String groupOf(KeyChange change) {
+        if (change instanceof KeyChange.Group group) return group.to();
+        if (change instanceof KeyChange.Quest quest) return quest.group();
+        if (change instanceof KeyChange.GroupUid group) return group.group();
+        return ((KeyChange.QuestUid) change).group();
     }
 
     private void logMoved(Integer moved) {
         if (moved != null && moved > 0) {
-            logger.info("Moved " + moved + " saved row(s) onto the current keys of renamed groups and quests.");
+            logger.info("Moved " + moved + " saved row(s) onto the changed keys of groups and quests.");
         }
     }
 

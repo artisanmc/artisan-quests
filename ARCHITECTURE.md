@@ -119,7 +119,7 @@ artisan_quests_import_map (source, source_id, target, batch, imported_at) -- PK 
 
 A row of `artisan_quests_quest` is resolved by `(group_key, quest_key)`, and a rotation by
 the group key (the column is still named `group_uid`). A save never changes these names:
-only a rename does (see *Content source*, *Identity and renames*). `quest_uid` is the uid of
+only a key change does (see *Content source*, *Identity and key changes*). `quest_uid` is the uid of
 a Document that still carries one, else empty; nothing is resolved by it.
 
 ### `bukkit/` - Paper integration
@@ -642,7 +642,7 @@ Read at startup only; a change requires a restart (`/msquests reload` points it 
 | `artisan` | `<project>/quest_groups/<group>.yml` (or `.yaml`, the `.yml` copy wins) of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `(group key, quest key)` |
 
 The group key is the file name and a quest is identified by its key in the group: a file
-written by hand needs nothing else (see *Identity and renames* below).
+written by hand needs nothing else (see *Identity and key changes* below).
 `QuestGroupDocumentReader` produces the same `QuestGroupConfigDTO` as the YAML reader (`ltext`
 texts resolved in the manifest's `default_lang`, `duration` as `24h`/`90m`, cron with
 `reset.timezone`) and rejects the whole file on an error, with the path of the faulty value first:
@@ -651,33 +651,34 @@ quest, etc. A group key is unique on the server, since commands and placeholders
 name a group by its key alone: two projects carrying `daily.yaml` are reported with both
 paths, and neither loads (a reload is then refused as a whole). Actions and conditions keep the MSQuests format for now (`type: ...`).
 
-#### Identity and renames
+#### Identity and key changes
 
-A quest's identity is `(group key, quest key)`, in the file and in the database alike. A
-renamed group or quest keeps its progress by naming what it was called: `old_key` (one key or
-a list) on the group or on the quest. `QuestGroupDocumentReader.renames` turns a Document's
-former names into `StoredRename`s, `QuestConfigLoad` carries those of the groups that
-loaded, and `QuestConfigService` hands them to `StoredRenameRepository` **before** publishing
+A quest's identity is `(group key, quest key)`, in the file and in the database alike. A key
+is an identifier, not a name (what players read is the `title`, free to change), so changing
+one is rare. A group or quest whose key changed keeps its progress by saying what the key
+was: `old_key` (one key or a list) on the group or on the quest.
+`QuestGroupDocumentReader.keyChanges` turns a Document's former keys into `KeyChange`s, `QuestConfigLoad` carries those of the groups that
+loaded, and `QuestConfigService` hands them to `KeyChangeRepository` **before** publishing
 the groups, at startup and on every reload (which rebuilds the actors from the database
 right after):
 
-| `StoredRename` | From | Moves |
+| `KeyChange` | From | Moves |
 |---|---|---|
 | `Group(from, to)` | the group's `old_key` | `group_key` of its quest rows, its rotations |
 | `Quest(group, from, to)` | a quest's `old_key` | `quest_key` of its rows |
 | `GroupUid(uid, group)` | the group's `uid` | rotations stored under the uid |
 | `QuestUid(uid, group, quest)` | a quest's `uid` | the keys of the rows whose `quest_uid` is that uid |
 
-`StoredRenameSqlRepository` applies them in one transaction (groups, then uids, then quests)
-and only touches rows still under a former name: applying them again changes nothing, which
+`KeyChangeSqlRepository` applies them in one transaction (groups, then uids, then quests)
+and only touches rows still under a former key: applying them again changes nothing, which
 is why `old_key` may stay in the file, and why a server of a network that reloads late still
-moves the rows it wrote meanwhile. It first reads the names in use (one pass per table) and
-runs a statement only for a former name some row carries. If the move fails, a reload is
-refused as a whole; at startup the groups that declare a rename are skipped, so none starts
+moves the rows it wrote meanwhile. It first reads the keys in use (one pass per table) and
+runs a statement only for a former key some row carries. If the move fails, a reload is
+refused as a whole; at startup the groups that declare a former key are skipped, so none starts
 over next to progress it cannot find.
 
 `uid` is what identified groups and quests before: optional now, and read as one more former
-name, so a server whose rows were keyed by uid moves them onto the keys at its first load,
+key, so a server whose rows were keyed by uid moves them onto the keys at its first load,
 with no step to run. The editor no longer writes one (it keeps those a file has) and writes
 `old_key` when a quest's key changes. `/msquests migrate` writes none either, and
 `LegacyDataCopier` copies the rows under their keys. The BeautyQuests import still writes
@@ -687,7 +688,7 @@ The reader refuses a Document whose `old_key` is still the key of a quest of the
 for a group, of a group of the server), or is claimed twice: the rows would go to the wrong
 quest. A group key holds at most 64 characters, the width of `artisan_quests_rotation.group_uid`.
 
-Not covered: the statistics events already recorded keep the former name (`group`, `quest`
+Not covered: the statistics events already recorded keep the former key (`group`, `quest`
 dimensions), and going back to a jar that resolves rows by uid loses the rotations counted
 since (their uid was replaced by the key) and the rows of Documents without a uid.
 
@@ -701,7 +702,7 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
    an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (the groups and quests converted, `objective -> stage`).
    The Documents carry no `uid`; a `uid` an earlier version of the migration wrote (in the map or in
    a Document) is kept and copied along, so that run still matches. Re-run, it finds a Document
-   renamed since by its `old_key`.
+   whose file name changed since by its `old_key`.
 3. `content_source: artisan` then restart: before any loading, `LegacyDataCopier`
    copies `msquests_*` into `artisan_quests_*` in one transaction (counts verified, otherwise
    rollback), only once. Without `map.yaml` while `msquests_quest` has rows, the
