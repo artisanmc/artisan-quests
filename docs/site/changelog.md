@@ -7,6 +7,13 @@ sidebar:
 
 ## Unreleased
 
+- Changing a quest that players have started no longer sends them back or blocks them: an objective
+  completed once stays completed when its target is raised, a stage or an objective added behind a
+  player is not asked of them, and a quest left with nothing to do (a lowered target, a removed
+  stage) completes with its rewards the next time the player loads instead of staying in progress
+  forever. In a `sequential` group, a quest added before the current one no longer deletes it. A
+  quest in progress taken out of its group keeps its active slot. See
+  "Changing a quest players have started" in the quest groups page.
 - A quest group file no longer needs a `uid`: a group is identified by its file name and a quest by
   its `key`, so a file can be written by hand. A key is an identifier (the name players read is the title). To change one without losing progress, write `old_key`
   (the former key) on the group or the quest: the server moves the saved progress when the file loads.

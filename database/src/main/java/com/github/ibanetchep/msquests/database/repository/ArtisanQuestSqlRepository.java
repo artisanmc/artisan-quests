@@ -40,7 +40,7 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
         String query = """
                 SELECT
                     q.id as q_id, q.quest_uid as q_uid, q.quest_key as q_key, q.group_key as q_group_key,
-                    q.quest_status as q_status, q.completed_at as q_completed_at,
+                    q.quest_status as q_status, q.completed_at as q_completed_at, q.reached_stage as q_reached_stage,
                     q.created_at as q_created_at, q.updated_at as q_updated_at, q.actor_id as q_actor_id,
                     o.stage_key as o_stage, o.objective_key as o_key, o.objective_status as o_status,
                     o.objective_type as o_type, o.progress as o_progress
@@ -70,7 +70,8 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                                     rs.getTimestamp("q_created_at").getTime(),
                                     rs.getTimestamp("q_updated_at").getTime(),
                                     new HashMap<>(),
-                                    rs.getString("q_uid")
+                                    rs.getString("q_uid"),
+                                    rs.getString("q_reached_stage")
                             );
                             quests.put(questId, quest);
                         }
@@ -115,9 +116,10 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
 
                 int updatedQuest = handle.createUpdate("""
                                 UPDATE artisan_quests_quest
-                                SET quest_status = :status, completed_at = :completedAt
+                                SET quest_status = :status, completed_at = :completedAt, reached_stage = :reachedStage
                                 WHERE id = :id""")
                         .bind("id", questId)
+                        .bind("reachedStage", quest.reachedStage())
                         .bind("status", quest.status().toString())
                         .bind("completedAt", quest.completedAt() != null ? new Timestamp(quest.completedAt()) : null)
                         .execute();
@@ -126,8 +128,9 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                     long now = System.currentTimeMillis();
                     handle.createUpdate("""
                                     INSERT INTO artisan_quests_quest
-                                        (id, quest_uid, quest_key, group_key, quest_status, completed_at, actor_id, created_at, updated_at)
-                                    VALUES (:id, :questUid, :questKey, :groupKey, :status, :completedAt, :actorId, :createdAt, :updatedAt)""")
+                                        (id, quest_uid, quest_key, group_key, quest_status, completed_at, actor_id, created_at, updated_at, reached_stage)
+                                    VALUES (:id, :questUid, :questKey, :groupKey, :status, :completedAt, :actorId, :createdAt, :updatedAt, :reachedStage)""")
+                            .bind("reachedStage", quest.reachedStage())
                             .bind("id", questId)
                             .bind("questUid", quest.questUid() != null ? quest.questUid() : "")
                             .bind("questKey", quest.questKey())

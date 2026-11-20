@@ -156,6 +156,44 @@ describe("questsLocalRows", () => {
     expect(quests[1]).toMatchObject({ status_key: "NOT_STARTED", status: "Available", assigned: false });
   });
 
+  it("leaves a stage added behind the player, and an objective completed once, as they are", () => {
+    const draft = structuredClone(daily) as { quests: { stages: Row[] }[] };
+    const [dig] = draft.quests[0]!.stages;
+    // The draft adds a stage before the one the player stands on, and raises a completed target.
+    draft.quests[0]!.stages = [
+      { key: "prepare", title: "Prepare", objectives: [{ key: "pack", type: "travel", distance: 10 }] },
+      dig!,
+    ];
+    const { rows } = load(draft as unknown as Row, "en");
+    const serverRows = [
+      {
+        id: "uuid",
+        quest_key: "miner",
+        group: "daily",
+        status_key: "IN_PROGRESS",
+        stages: [
+          {
+            key: "dig",
+            active: true,
+            objectives: [
+              { key: "stone", progress: 32, status_key: "COMPLETED" },
+              { key: "walk", progress: 10, status_key: "IN_PROGRESS" },
+            ],
+          },
+        ],
+      },
+    ];
+    const [active] = rows(ACTIVE, { serverRows });
+    const [prepare, digRow] = active!.stages as Row[];
+    expect(active).toMatchObject({ stage_name: "Dig", stage_index: 1 });
+    expect(prepare).toMatchObject({ completed: true, active: false, progress_ratio: 1 });
+    expect((prepare!.objectives as Row[])[0]).toMatchObject({ status_key: "COMPLETED" });
+    const [stone, walk] = digRow!.objectives as Row[];
+    // 32 of 64, but completed once: it stays completed.
+    expect(stone).toMatchObject({ completed: true, status_key: "COMPLETED", progress_ratio: 1 });
+    expect(walk).toMatchObject({ completed: false, status_key: "IN_PROGRESS" });
+  });
+
   it("narrows quests to the group the menu asks for", () => {
     const { rows } = load(daily, "en");
     expect(rows(QUESTS, { params: { group: "weekly" } })).toEqual([]);

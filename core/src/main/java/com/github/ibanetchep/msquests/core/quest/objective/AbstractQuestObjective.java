@@ -57,7 +57,7 @@ public abstract class AbstractQuestObjective<C extends QuestObjectiveConfig> imp
             return QuestObjectiveStatus.FAILED;
         }
 
-        if (completed) {
+        if (isCompleted() || questStage.isPassed()) {
             return QuestObjectiveStatus.COMPLETED;
         }
 
@@ -83,9 +83,14 @@ public abstract class AbstractQuestObjective<C extends QuestObjectiveConfig> imp
         completed = true;
     }
 
+    /**
+     * Completed once is completed for good: an objective saved as completed stays so when its
+     * target is raised afterwards. Otherwise the progress is compared to the target of the
+     * content as it is now, so a target lowered under the progress completes it.
+     */
     @Override
     public boolean isCompleted() {
-        return getProgress() >= target;
+        return completed || getProgress() >= target;
     }
 
     /**
@@ -96,7 +101,7 @@ public abstract class AbstractQuestObjective<C extends QuestObjectiveConfig> imp
      * was persisted, or a targetless objective, must not blow up the display.
      */
     public double getProgressRatio() {
-        if (target <= 0) {
+        if (target <= 0 || completed) {
             return 1.0;
         }
         return Math.clamp((double) getProgress() / target, 0.0, 1.0);

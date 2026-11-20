@@ -7,6 +7,7 @@ import com.github.ibanetchep.msquests.core.mapper.QuestMapper;
 import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
+import com.github.ibanetchep.msquests.core.quest.actor.QuestStatus;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
@@ -16,6 +17,7 @@ import com.github.ibanetchep.msquests.core.repository.RotationRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -73,10 +75,13 @@ public class QuestService {
         return questRepository.getAllByActor(actor.getId())
                 .thenCombine(rotations, (questEntryDtos, rotationCounts) -> {
                     List<Quest> loaded = new ArrayList<>();
+                    List<Quest> withoutReachedStage = new ArrayList<>();
+                    Map<QuestGroupConfig, Integer> heldSlots = new HashMap<>();
 
                     for (QuestDTO questDTO : questEntryDtos.values()) {
                         QuestConfig questConfig = resolveConfig(questDTO);
                         if (questConfig == null) {
+                            holdSlot(questDTO, heldSlots);
                             continue;
                         }
                         QuestGroupConfig questGroupConfig = questConfig.getGroupConfig();
@@ -85,10 +90,18 @@ public class QuestService {
                             continue;
                         }
 
-                        loaded.add(questFactory.buildQuest(questConfig, actor, questDTO));
+                        Quest quest = questFactory.buildQuest(questConfig, actor, questDTO);
+                        loaded.add(quest);
+                        if (questDTO.reachedStage() == null && quest.isActive() && quest.getReachedStageKey() != null) {
+                            withoutReachedStage.add(quest);
+                        }
                     }
 
                     Collection<Quest> previous = actor.replaceLoadedQuests(loaded, rotationCounts, loadStartedAt);
+                    heldSlots.forEach((group, count) -> {
+                        ActorQuestGroup actorGroup = actor.getActorQuestGroup(group);
+                        if (actorGroup != null) actorGroup.setHeldSlots(count);
+                    });
 
                     // Register the new instances before dropping the old ones: pending progress is
                     // resolved by quest id, and must never find the id missing in between.
@@ -99,6 +112,13 @@ public class QuestService {
                         if (!actor.getQuests().containsKey(old.getId())) {
                             questRegistry.remove(old);
                         }
+                    }
+
+                    // A row from before the stage reached was recorded: write it now, while the
+                    // content is the one the quest was last played with, so the next change of
+                    // content finds it.
+                    for (Quest quest : withoutReachedStage) {
+                        if (actor.getQuests().get(quest.getId()) == quest) saveQuest(quest);
                     }
                     return (Void) null;
                 })
@@ -130,6 +150,18 @@ public class QuestService {
                             + questDTO.groupKey() + "'.");
         }
         return questConfig;
+    }
+
+    /**
+     * A quest in progress whose group is still there but whose own config is not (taken out of the
+     * group, for a while or by mistake) keeps the active slot it holds: freeing it would hand the
+     * actor another quest, and one too many once the quest is back.
+     */
+    private void holdSlot(QuestDTO questDTO, Map<QuestGroupConfig, Integer> heldSlots) {
+        if (questDTO.status() != QuestStatus.IN_PROGRESS) return;
+        QuestGroupConfig group = questConfigRegistry.getQuestGroupConfigs().get(questDTO.groupKey());
+        if (group == null || !isInCurrentPeriod(group, questDTO)) return;
+        heldSlots.merge(group, 1, Integer::sum);
     }
 
     /**

@@ -19,6 +19,7 @@ public class ActorQuestGroup {
     private final QuestGroupConfig groupConfig;
     private final Map<String, List<Quest>> questsByKey = new ConcurrentHashMap<>();
     private final AtomicInteger rotationsInPeriod = new AtomicInteger(0);
+    private volatile int heldSlots;
 
     public ActorQuestGroup(QuestActor actor, QuestGroupConfig groupConfig) {
         this.actor = actor;
@@ -122,10 +123,23 @@ public class ActorQuestGroup {
                 .count();
     }
 
+    /** The quests in progress, with the active slots held by the ones the content no longer defines. */
     public int getInProgressCount() {
-        return (int) allQuestsStream()
+        return heldSlots + (int) allQuestsStream()
                 .filter(Quest::isActive)
                 .count();
+    }
+
+    /**
+     * Active slots taken by quests in progress that are stored but not loaded, their config being
+     * out of the group for now: they still count against {@code max_active}.
+     */
+    public int getHeldSlots() {
+        return heldSlots;
+    }
+
+    public void setHeldSlots(int heldSlots) {
+        this.heldSlots = heldSlots;
     }
 
     public List<QuestConfig> getNotInProgress() {

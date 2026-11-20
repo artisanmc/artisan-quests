@@ -102,6 +102,20 @@ public class QuestFactory {
             quest.addStage(stage);
         }
 
+        markPassedStages(quest, dto.reachedStage());
         return quest;
+    }
+
+    /**
+     * The stages before the one the quest had reached are behind the actor. The stage reached is
+     * found by its key: when it is gone (removed, or its key changed), nothing is marked and the
+     * current stage is the first one with an objective left, as for a row that never recorded it.
+     */
+    private static void markPassedStages(Quest quest, String reachedStage) {
+        if (reachedStage == null || !quest.getStages().containsKey(reachedStage)) return;
+        for (QuestStage stage : quest.getStages().values()) {
+            if (stage.getKey().equals(reachedStage)) return;
+            stage.setPassed(true);
+        }
     }
 }

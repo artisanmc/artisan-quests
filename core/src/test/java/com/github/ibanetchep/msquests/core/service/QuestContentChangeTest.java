@@ -64,9 +64,9 @@ import static org.mockito.Mockito.when;
  * What a quest in progress becomes when its content changes under it: one test per kind of change,
  * each asserting what the server does today.
  *
- * <p>A test named {@code safe…} states a behaviour to keep. A test named {@code harmful…} pins a
- * loss, a rollback or a duplicate that exists today: it is meant to be turned around by the fix,
- * never to be kept green as it is.
+ * <p>A test named {@code safe…} states a behaviour to keep: what the actor has done or passed stays
+ * theirs, whatever the content becomes. A test named {@code harmful…} pins a loss or a false state
+ * that still exists: it is meant to be turned around by its fix, never to be kept green as it is.
  *
  * <p>The quest rows are an in-memory stand-in that follows {@code ArtisanQuestSqlRepository}: a
  * save writes the objectives the quest holds, by objective key, and never deletes a row the quest
@@ -210,41 +210,39 @@ class QuestContentChangeTest {
         }
 
         @Test
-        void harmfulAQuestWhoseLastObjectiveIsReachedByALoweredTargetNeverCompletes() {
+        void safeAQuestWhoseLastObjectiveIsReachedByALoweredTargetCompletesWhenItLoads() {
             publish(story(quest("mine", stage("dig", objective("stone", 100)))));
             UUID id = rows.inProgress("story", "mine", Map.of("stone", 60));
 
-            publish(story(rewarding(quest("mine", stage("dig", objective("stone", 50))))));
+            change(story(rewarding(quest("mine", stage("dig", objective("stone", 50))))));
             Quest quest = reload(id);
-            lifecycle.refreshActor(actor);
+            lifecycle.completeFinishedQuests(actor);
 
-            assertEquals(QuestStatus.IN_PROGRESS, quest.getStatus(), "still in progress");
-            assertNull(quest.getCurrentStage(), "with nothing left to do");
-            assertTrue(quest.getActiveObjectives().isEmpty(), "and no objective that could still trigger the completion");
-            assertFalse(chainsRun.contains(QUEST_REWARD), "the rewards are never given");
-            assertEquals(1, actor.getActorQuestGroup(configs.getQuestGroupConfigs().get("story")).getInProgressCount(),
-                    "and it holds an active slot of the group for good");
+            assertEquals(QuestStatus.COMPLETED, quest.getStatus());
+            assertEquals(QuestStatus.COMPLETED, rows.status(id), "and saved so");
+            assertEquals(1, count(CoreQuestCompletedEvent.class));
+            assertEquals(1, chainsRun.stream().filter(QUEST_REWARD::equals).count(), "the rewards are given, once");
+            assertEquals(0, actor.getActorQuestGroup(configs.getQuestGroupConfigs().get("story")).getInProgressCount(),
+                    "its active slot is free again");
+
+            lifecycle.completeFinishedQuests(actor);
+            assertEquals(1, chainsRun.stream().filter(QUEST_REWARD::equals).count(), "a second pass pays nothing more");
         }
 
         @Test
-        void harmfulATargetRaisedAboveACompletedObjectiveSendsThePlayerBackAndPaysItTwice() {
+        void safeATargetRaisedAboveACompletedObjectiveLeavesItCompleted() {
             publish(story(rewarding(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10))))));
             UUID id = rows.inProgress("story", "mine", Map.of("iron", 4));
             rows.setObjective(id, "stone", 50, QuestObjectiveStatus.COMPLETED);
 
-            publish(story(rewarding(quest("mine", stage("dig", objective("stone", 80)), stage("smelt", objective("iron", 10))))));
+            change(story(rewarding(quest("mine", stage("dig", objective("stone", 80)), stage("smelt", objective("iron", 10))))));
             Quest quest = reload(id);
 
-            assertEquals("dig", quest.getCurrentStage().getKey(), "back on a stage already finished");
-            assertEquals(QuestObjectiveStatus.COMPLETED, objective(quest, "stone").getStatus(),
-                    "which the menus still show as completed, since the stored status says so");
-            assertFalse(objective(quest, "stone").isCompleted());
-
-            progress.contributeNow(objective(quest, "stone"), () -> 30, null);
-
-            assertEquals(1, count(CoreQuestStageCompletedEvent.class), "the stage is recorded as completed a second time");
-            assertEquals(1, chainsRun.stream().filter(OBJECTIVE_REWARD::equals).count(),
-                    "and its objective_complete actions run a second time");
+            assertEquals("smelt", quest.getCurrentStage().getKey(), "completed once is completed for good");
+            assertTrue(objective(quest, "stone").isCompleted());
+            assertEquals(QuestObjectiveStatus.COMPLETED, objective(quest, "stone").getStatus());
+            assertEquals(1.0, quest.getStages().get("dig").getProgressRatio(), "shown full, not 50/80");
+            assertFalse(quest.getActiveObjectives().contains(objective(quest, "stone")), "it cannot be completed, and paid, again");
         }
 
         @Test
@@ -279,57 +277,87 @@ class QuestContentChangeTest {
     class Stages {
 
         @Test
-        void harmfulAStageAddedBeforeTheCurrentOneSendsThePlayerBackToIt() {
+        void safeAStageAddedBeforeTheCurrentOneIsBehindThePlayer() {
             publish(story(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)))));
             UUID id = rows.inProgress("story", "mine", Map.of("stone", 50, "iron", 4));
 
-            publish(story(quest("mine",
+            change(story(quest("mine",
                     stage("dig", objective("stone", 50)), stage("gather", objective("wood", 20)), stage("smelt", objective("iron", 10)))));
             Quest quest = reload(id);
 
-            assertEquals("gather", quest.getCurrentStage().getKey());
-            assertEquals(4, objective(quest, "iron").getProgress(), "the later stage keeps its progress, but is closed again");
-            assertFalse(quest.getActiveObjectives().contains(objective(quest, "iron")));
+            assertEquals("smelt", quest.getCurrentStage().getKey());
+            assertTrue(quest.getStages().get("gather").isPassed(), "the new stage is not asked of a player already further");
+            assertEquals(QuestObjectiveStatus.COMPLETED, objective(quest, "wood").getStatus());
+            assertEquals(4, objective(quest, "iron").getProgress());
+
+            progress.contributeNow(objective(quest, "iron"), () -> 6, null);
+            assertEquals(QuestStatus.COMPLETED, quest.getStatus(), "and the quest ends without it");
         }
 
         @Test
-        void harmfulAnObjectiveAddedToAFinishedStageReopensItAndRecordsItTwice() {
+        void safeAPlayerNotYetAtAnAddedStageDoesIt() {
+            publish(story(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)))));
+            UUID id = rows.inProgress("story", "mine", Map.of("stone", 20));
+
+            change(story(quest("mine",
+                    stage("dig", objective("stone", 50)), stage("gather", objective("wood", 20)), stage("smelt", objective("iron", 10)))));
+            Quest quest = reload(id);
+            progress.contributeNow(objective(quest, "stone"), () -> 30, null);
+
+            assertEquals("gather", quest.getCurrentStage().getKey());
+        }
+
+        @Test
+        void safeAnObjectiveAddedToAFinishedStageDoesNotReopenIt() {
             publish(story(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)))));
             UUID id = rows.inProgress("story", "mine", Map.of("iron", 4));
             rows.setObjective(id, "stone", 50, QuestObjectiveStatus.COMPLETED);
 
-            publish(story(quest("mine", stage("dig", objective("stone", 50), objective("coal", 5)), stage("smelt", objective("iron", 10)))));
+            change(story(quest("mine", stage("dig", objective("stone", 50), objective("coal", 5)), stage("smelt", objective("iron", 10)))));
             Quest quest = reload(id);
 
-            assertEquals("dig", quest.getCurrentStage().getKey());
-            progress.contributeNow(objective(quest, "coal"), () -> 5, null);
-            assertEquals(1, count(CoreQuestStageCompletedEvent.class), "'dig' was already recorded as completed once");
+            assertEquals("smelt", quest.getCurrentStage().getKey());
+            assertFalse(quest.getActiveObjectives().contains(objective(quest, "coal")));
+            assertEquals(0, count(CoreQuestStageCompletedEvent.class), "'dig' is not recorded as completed a second time");
         }
 
         @Test
-        void harmfulRemovingTheStageThePlayerIsOnLeavesAQuestThatNeverCompletes() {
+        void safeRemovingTheStageThePlayerIsOnCompletesTheQuestWhenItLoads() {
             publish(story(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)))));
             UUID id = rows.inProgress("story", "mine", Map.of("stone", 50, "iron", 4));
 
-            publish(story(rewarding(quest("mine", stage("dig", objective("stone", 50))))));
+            change(story(rewarding(quest("mine", stage("dig", objective("stone", 50))))));
             Quest quest = reload(id);
-            lifecycle.refreshActor(actor);
+            lifecycle.completeFinishedQuests(actor);
 
-            assertEquals(QuestStatus.IN_PROGRESS, quest.getStatus());
-            assertNull(quest.getCurrentStage());
-            assertFalse(chainsRun.contains(QUEST_REWARD));
+            assertEquals(QuestStatus.COMPLETED, quest.getStatus());
+            assertEquals(1, chainsRun.stream().filter(QUEST_REWARD::equals).count());
         }
 
         @Test
-        void harmfulReorderedStagesPutThePlayerOnTheFirstUnfinishedOneOfTheNewOrder() {
+        void safeReorderedStagesLeaveThePlayerOnTheStageTheyHadReached() {
             publish(story(quest("mine",
                     stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)), stage("craft", objective("pick", 1)))));
             UUID id = rows.inProgress("story", "mine", Map.of("stone", 50, "iron", 4));
 
-            publish(story(quest("mine",
+            change(story(quest("mine",
                     stage("craft", objective("pick", 1)), stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)))));
+            Quest quest = reload(id);
 
-            assertEquals("craft", reload(id).getCurrentStage().getKey(), "'smelt', half done, is closed until 'craft' is finished");
+            assertEquals("smelt", quest.getCurrentStage().getKey());
+            assertTrue(quest.getStages().get("craft").isPassed(), "what now comes before it is behind the player");
+        }
+
+        /** A row saved before the stage reached was recorded: the first load writes it. */
+        @Test
+        void safeARowWithoutItsReachedStageGetsItOnTheFirstLoad() {
+            publish(story(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10)))));
+            UUID id = rows.inProgress("story", "mine", Map.of("stone", 50, "iron", 4));
+            assertNull(rows.reachedStage(id));
+
+            reload(id);
+
+            assertEquals("smelt", rows.reachedStage(id));
         }
 
         @Test
@@ -363,26 +391,26 @@ class QuestContentChangeTest {
     class Quests {
 
         @Test
-        void harmfulAQuestTakenOutOfItsGroupFreesItsSlotAndComesBackAsAnExtraQuest() {
-            QuestConfig fish = quest("fish", stage("catch", objective("cod", 5)));
-            publish(group("daily", 1, quest("mine", stage("dig", objective("stone", 50))), fish));
+        void safeAQuestTakenOutOfItsGroupKeepsItsSlotUntilItIsBack() {
+            publish(group("daily", 1, quest("mine", stage("dig", objective("stone", 50))), quest("fish", stage("catch", objective("cod", 5)))));
             UUID id = rows.inProgress("daily", "mine", Map.of("stone", 20));
             reload(id);
 
-            // The quest is removed, by mistake or for a fix: the player is given another one.
+            // The quest is removed, by mistake or for a fix.
             QuestConfig fishAlone = quest("fish", stage("catch", objective("cod", 5)));
             publish(group("daily", 1, fishAlone));
             questService.loadQuests(actor).join();
+
             assertTrue(actor.getQuests().isEmpty(), "the stored quest is ignored, its row kept");
-            assertEquals(QuestStartResult.SUCCESS, lifecycle.startQuest(actor, fishAlone, QuestDistributionStrategy.RANDOM, null));
-            rows.save(new QuestMapper().toDTO(actor.getQuests().values().iterator().next())).join();
+            assertEquals(QuestStartResult.MAX_ACTIVE_REACHED,
+                    lifecycle.startQuest(actor, fishAlone, QuestDistributionStrategy.RANDOM, null), "but its slot is not given away");
 
             // The quest is put back.
             publish(group("daily", 1, quest("mine", stage("dig", objective("stone", 50))), quest("fish", stage("catch", objective("cod", 5)))));
-            questService.loadQuests(actor).join();
+            Quest back = reload(id);
 
-            assertEquals(2, actor.getActorQuestGroup(configs.getQuestGroupConfigs().get("daily")).getInProgressCount(),
-                    "two quests in progress in a group that allows one");
+            assertEquals(20, objective(back, "stone").getProgress());
+            assertEquals(1, actor.getActorQuestGroup(configs.getQuestGroupConfigs().get("daily")).getInProgressCount());
         }
 
         @Test
@@ -441,7 +469,7 @@ class QuestContentChangeTest {
     class Ladders {
 
         @Test
-        void harmfulAStepInsertedBeforeTheCurrentOneDeletesTheQuestInProgress() {
+        void safeAStepInsertedBeforeTheCurrentOneIsBehindTheActor() {
             publish(ladder(quest("first", stage("s", objective("a", 10))), quest("second", stage("s", objective("b", 10)))));
             rows.add("ladder", "first", QuestStatus.COMPLETED, Instant.now());
             UUID second = rows.inProgress("ladder", "second", Map.of("b", 7));
@@ -450,13 +478,30 @@ class QuestContentChangeTest {
             QuestGroupConfig changed = ladder(quest("first", stage("s", objective("a", 10))),
                     quest("between", stage("s", objective("x", 10))), quest("second", stage("s", objective("b", 10))));
             publish(changed);
-            questService.loadQuests(actor).join();
+            Quest quest = reload(second);
             lifecycle.syncLadder(actor, changed);
 
             ActorQuestGroup steps = actor.getActorQuestGroup(changed);
-            assertTrue(steps.hasActive("between"));
-            assertFalse(rows.exists(second), "the row of 'second' and its 7/10 are deleted");
-            assertFalse(steps.hasStarted("second"), "it will start again from zero after 'between'");
+            assertTrue(rows.exists(second), "the quest in progress is not deleted");
+            assertEquals(7, objective(quest, "b").getProgress());
+            assertTrue(steps.hasActive("second"));
+            assertFalse(steps.hasStarted("between"), "the step added behind the actor is not asked of them");
+        }
+
+        @Test
+        void safeAStepInsertedAheadOfTheActorIsDoneInItsTurn() {
+            publish(ladder(quest("first", stage("s", objective("a", 10))), quest("third", stage("s", objective("c", 10)))));
+            UUID first = rows.inProgress("ladder", "first", Map.of("a", 7));
+            reload(first);
+
+            QuestGroupConfig changed = ladder(quest("first", stage("s", objective("a", 10))),
+                    quest("second", stage("s", objective("b", 10))), quest("third", stage("s", objective("c", 10))));
+            publish(changed);
+            Quest quest = reload(first);
+            progress.contributeNow(objective(quest, "a"), () -> 3, null);
+            lifecycle.syncLadder(actor, changed);
+
+            assertTrue(actor.getActorQuestGroup(changed).hasActive("second"));
         }
 
         @Test
@@ -480,6 +525,15 @@ class QuestContentChangeTest {
 
     private void publish(QuestGroupConfig... groups) {
         configs.replaceQuestGroupConfigs(List.of(groups));
+    }
+
+    /**
+     * New content goes live for an actor who played with the previous one: their quests were
+     * loaded and saved with it before it changed.
+     */
+    private void change(QuestGroupConfig... groups) {
+        questService.loadQuests(actor).join();
+        publish(groups);
     }
 
     /** What {@code /quest admin reload} does for a loaded actor, then the quest as it stands. */
@@ -616,6 +670,14 @@ class QuestContentChangeTest {
             quests.get(questId).objectives().put(key, new QuestObjectiveDTO(questId, key, "test", status, value, null));
         }
 
+        QuestStatus status(UUID questId) {
+            return quests.get(questId).status();
+        }
+
+        String reachedStage(UUID questId) {
+            return quests.get(questId).reachedStage();
+        }
+
         boolean exists(UUID questId) {
             return quests.containsKey(questId);
         }
@@ -628,7 +690,8 @@ class QuestContentChangeTest {
         public CompletableFuture<Map<UUID, QuestDTO>> getAllByActor(UUID actorUniqueId) {
             Map<UUID, QuestDTO> copy = new LinkedHashMap<>();
             quests.forEach((id, row) -> copy.put(id, new QuestDTO(row.id(), row.questKey(), row.groupKey(), row.actorId(),
-                    row.status(), row.completedAt(), row.createdAt(), row.updatedAt(), new HashMap<>(row.objectives()))));
+                    row.status(), row.completedAt(), row.createdAt(), row.updatedAt(), new HashMap<>(row.objectives()),
+                    row.questUid(), row.reachedStage())));
             return CompletableFuture.completedFuture(copy);
         }
 
@@ -639,7 +702,8 @@ class QuestContentChangeTest {
             if (stored != null) objectives.putAll(stored.objectives()); // rows of other keys are never deleted
             objectives.putAll(quest.objectives());
             quests.put(quest.id(), new QuestDTO(quest.id(), quest.questKey(), quest.groupKey(), quest.actorId(),
-                    quest.status(), quest.completedAt(), quest.createdAt(), quest.updatedAt(), objectives));
+                    quest.status(), quest.completedAt(), quest.createdAt(), quest.updatedAt(), objectives,
+                    quest.questUid(), quest.reachedStage()));
             return CompletableFuture.completedFuture(null);
         }
 

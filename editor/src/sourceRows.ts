@@ -152,16 +152,18 @@ function questRow(group: QuestGroup, quest: Quest, server: Row | undefined, lang
 }
 
 /**
- * The fields an attempt derives from its config. The server stores only each objective's
- * progress and its COMPLETED/FAILED flag, keyed by objective key within the quest
- * (`QuestFactory.buildQuest`), and derives the rest on every read: an objective is done once
- * its progress reaches the target, a stage once all its objectives are, the current stage is
- * the first one not done. The same derivation over the draft gives exactly the rows the server
- * will send once the draft is deployed, a lowered target or a removed stage included.
+ * The fields an attempt derives from its config. The server stores each objective's progress
+ * and its COMPLETED/FAILED flag, keyed by objective key within the quest, and the key of the
+ * stage the quest stands on (`QuestFactory.buildQuest`); it derives the rest on every read. An
+ * objective is done once completed or once its progress reaches the target, a stage once all
+ * its objectives are or once the attempt went past it, the current stage is the first one not
+ * done. What was done or passed stays so whatever the draft changes: the same derivation over
+ * the draft gives the rows the server will send once it is deployed, a lowered target, a stage
+ * added behind the player or a removed one included.
  */
 function instanceFields(quest: Quest, server: Row | undefined, lang: string): Row {
   const stored = server ? storedObjectives(server) : undefined;
-  const stages = stageRows(quest, stored, lang);
+  const stages = stageRows(quest, stored, server ? reachedStage(server) : "", lang);
   const current = stages.find((s) => s.active === true);
   const next = current ? (current.objectives as Row[]).find((o) => o.done !== true) : undefined;
   return {
@@ -202,19 +204,39 @@ function storedObjectives(server: Row): Map<string, StoredObjective> {
   return stored;
 }
 
-/** `undefined` stored state: no attempt, every stage and objective in its neutral state. */
-function stageRows(quest: Quest, stored: Map<string, StoredObjective> | undefined, lang: string): Row[] {
+/** The key of the stage the server's attempt stands on, "" when it stands on none. */
+function reachedStage(server: Row): string {
+  return str(asRows(server.stages).find((s) => s.active === true)?.key);
+}
+
+/**
+ * `undefined` stored state: no attempt, every stage and objective in its neutral state.
+ * `reached`: the stage the attempt stands on; while the draft still has it, the stages before
+ * it are behind the player (`QuestStage.isPassed`).
+ */
+function stageRows(
+  quest: Quest,
+  stored: Map<string, StoredObjective> | undefined,
+  reached: string,
+  lang: string,
+): Row[] {
+  const reachedIndex = stored && reached ? quest.stages.findIndex((s) => s.key === reached) : -1;
   const stages = quest.stages.map((stage, index) => {
-    const objectives = stage.objectives.map((o) => objectiveRow(o, stored?.get(o.key), lang));
+    const passed = index < reachedIndex;
+    const objectives = stage.objectives.map((o) => {
+      const row = objectiveRow(o, stored?.get(o.key), lang);
+      if (passed && row.status_key !== "FAILED") row.status_key = "COMPLETED";
+      return row;
+    });
     return {
       key: stage.key,
       name: stage.title,
       flow: flow(stage),
       index,
-      // `QuestStage.isCompleted`: all objectives done, so an empty stage is.
-      completed: stored !== undefined && objectives.every((o) => o.done),
+      // `QuestStage.isCompleted`: passed, or all objectives done, so an empty stage is.
+      completed: stored !== undefined && (passed || objectives.every((o) => o.done)),
       active: false,
-      progress_ratio: stored ? mean(objectives.map((o) => o.progress_ratio as number)) : 0,
+      progress_ratio: stored ? (passed ? 1 : mean(objectives.map((o) => o.progress_ratio as number))) : 0,
       objectives,
     } as Row;
   });
@@ -241,18 +263,19 @@ function objectiveRow(objective: Objective, stored: StoredObjective | undefined,
   // The server's name is exact (its lang file, the item's translated name): kept while the
   // objective asks the same thing, else rebuilt from the default names.
   const same = server && server.type === objective.type && server.target === target;
+  const done = stored !== undefined && (stored.flag === "COMPLETED" || progress >= target);
   return {
     key: objective.key,
     name: same && typeof server.name === "string" ? server.name : objectiveName(objective, lang),
     type: objective.type,
     progress,
     target,
-    // `AbstractQuestObjective`: done once the progress reaches the target, whatever the
-    // stored flag says; the ratio is clamped, so a lowered target reads 1, not 1.4.
-    progress_ratio: stored ? (target <= 0 ? 1 : Math.min(Math.max(progress / target, 0), 1)) : 0,
-    completed: stored !== undefined && progress >= target,
-    status_key: stored?.flag || "PENDING",
-    done: stored !== undefined && progress >= target,
+    // `AbstractQuestObjective`: done once completed, or once the progress reaches the target
+    // (a lowered one included); the ratio is clamped, so a lowered target reads 1, not 1.4.
+    progress_ratio: stored ? (target <= 0 || done ? 1 : Math.min(Math.max(progress / target, 0), 1)) : 0,
+    completed: done,
+    status_key: stored?.flag === "FAILED" ? "FAILED" : done ? "COMPLETED" : "PENDING",
+    done,
   };
 }
 

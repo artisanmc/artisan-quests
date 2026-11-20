@@ -90,7 +90,7 @@ Root package: `com.github.ibanetchep.msquests.database`
 | `DbAccess` | HikariCP connection pool, JDBI instance, single-thread executor |
 | `DbCredentials` | Configuration record (H2 or MySQL) |
 | `MigrationManager` | Sequential migration system with a `schema_version` table |
-| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`) |
+| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`), `AddReachedStageMigration` (v5, `artisan_quests_quest.reached_stage`) |
 | `SqlTables` | Table names of a layout: `LEGACY` (`msquests_*`) or `ARTISAN` (`artisan_quests_*`) |
 | `LegacyDataCopier` | One-time transactional copy from `msquests_*` to `artisan_quests_*` (see *Content source*) |
 | `repository/` | `SqlRepository` (async base), SQL implementations for Quest, PlayerProfile, Actor, Rotation; `ArtisanQuestSqlRepository` for `artisan_quests_quest/objective` |
@@ -115,6 +115,9 @@ artisan_quests_data_copy (one row once the copy is done)
 
 -- v4
 artisan_quests_import_map (source, source_id, target, batch, imported_at) -- PK (source, source_id)
+
+-- v5
+artisan_quests_quest.reached_stage  -- key of the stage the quest stood on at its last save, NULL before
 ```
 
 A row of `artisan_quests_quest` is resolved by `(group_key, quest_key)`, and a rotation by
@@ -709,6 +712,38 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
    plugin refuses to start.
 4. `/msquests stats` before and after to compare. Rollback: `content_source: legacy`
    or the old jar; progress made in the meantime stays in `artisan_quests_*`.
+
+#### Content changed under a quest in progress
+
+A stored quest is rebuilt from the content of the moment each time its actor loads
+(`QuestFactory.buildQuest`): each objective takes the progress stored under its key. What the
+actor did or passed stays theirs, whatever the content becomes:
+
+- **An objective completed once stays completed** (`AbstractQuestObjective.isCompleted`): its
+  stored status wins over a target raised afterwards. A target lowered under the progress
+  completes it.
+- **A stage passed stays passed** (`QuestStage.isPassed`): a save records the stage the quest
+  stands on (`artisan_quests_quest.reached_stage`), and the stages that come before it in the
+  content are behind the actor. A stage inserted before it, an objective added to a finished
+  stage, or stages reordered do not send them back; an actor who has not reached the place
+  yet does the new stage. The legacy `msquests_quest` table records no stage: there the
+  current stage stays the first one with an objective left. When the stage recorded is gone, the current stage is the first one
+  with an objective left. A row from before the column gets it at its first load.
+- **A quest with nothing left completes when its actor loads**
+  (`QuestLifecycleService.completeFinishedQuests`, rewards included): a quest otherwise only
+  checks its end when one of its objectives completes.
+- **In a `sequential` group, a step without `completed_when` added behind the actor counts as
+  done** (`ladderIndex`): the quest in progress is not dropped for it.
+- **A quest in progress whose config left its group keeps its active slot**
+  (`ActorQuestGroup.getHeldSlots`): its row is ignored, not its place, so no extra quest is
+  handed out meanwhile.
+
+`QuestContentChangeTest` holds one test per kind of change. Its `harmful…` tests pin what is
+still lost or wrong: a changed objective key (progress back to 0, the old row kept and found
+again if the key is reused), a changed objective type under the same key (progress kept), a
+quest moved to another group, a reset added to a group that had none, and the
+`objective_complete` actions skipped when a lowered target completes an objective. The editor's
+preview follows the same rules (`editor/src/sourceRows.ts`, vectors in `testdata/sources/`).
 
 ### Imports from other quest plugins
 

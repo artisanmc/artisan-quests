@@ -160,6 +160,23 @@ public class QuestLifecycleService {
         });
     }
 
+    /**
+     * Completes, rewards included, the actor's quests in progress that have nothing left to do.
+     * A quest only checks its own end when one of its objectives completes; a change of content
+     * can leave it with none (a target lowered under the progress, its last stage removed), and
+     * nothing would ever end it.
+     */
+    public void completeFinishedQuests(QuestActor actor) {
+        for (Quest quest : List.copyOf(actor.getQuests().values())) {
+            if (!quest.shouldComplete()) continue;
+            executor.execute(quest.getId(), updatedQuest -> {
+                if (!updatedQuest.shouldComplete()) return;
+                finalizeQuestCompletion(updatedQuest);
+                persistenceService.saveQuest(updatedQuest).join();
+            });
+        }
+    }
+
     private void finalizeQuestCompletion(Quest quest) {
         var questCompleteEvent = new CoreQuestCompletedEvent(quest);
         dispatcher.dispatch(questCompleteEvent);
@@ -200,19 +217,27 @@ public class QuestLifecycleService {
     /**
      * The index of a ladder's current step for the actor: the first one that is not done, the
      * number of steps when all are. A step without {@code completed_when} is done once the actor
-     * started it and it ended. Empty when the group is not in list order or a step cannot be read now.
+     * started it and it ended, or when it was never started and a later step was (a step inserted
+     * behind the actor). Empty when the group is not in list order or a step cannot be read now.
      */
     public OptionalInt ladderIndex(QuestActor actor, QuestGroupConfig groupConfig, @Nullable UUID viewer) {
         if (groupConfig.getDistributionStrategy() != QuestDistributionStrategy.SEQUENTIAL) return OptionalInt.empty();
         ActorQuestGroup actorGroup = actor.getActorQuestGroup(groupConfig);
         if (actorGroup == null) return OptionalInt.empty();
         List<QuestConfig> steps = groupConfig.getOrderedQuests();
+        int lastStarted = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            if (actorGroup.hasStarted(steps.get(i).getKey())) lastStarted = i;
+        }
         for (int i = 0; i < steps.size(); i++) {
             QuestConfig step = steps.get(i);
             boolean done;
             if (step.getCompletedWhen().isEmpty()) {
-                // Started once and no longer running: behind, however it ended.
-                done = actorGroup.hasStarted(step.getKey()) && !actorGroup.hasActive(step.getKey());
+                // Started once and no longer running: behind, however it ended. Never started, with
+                // a later step started: it was added behind the actor, and is behind them too.
+                done = actorGroup.hasStarted(step.getKey())
+                        ? !actorGroup.hasActive(step.getKey())
+                        : i < lastStarted;
             } else {
                 Optional<Boolean> read = ladderSteps.done(actor, step, viewer);
                 if (read.isEmpty()) return OptionalInt.empty();

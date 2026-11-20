@@ -1,5 +1,6 @@
 package com.github.ibanetchep.msquests.database;
 
+import com.github.ibanetchep.msquests.database.migrations.AddReachedStageMigration;
 import com.github.ibanetchep.msquests.database.migrations.AddRotationTableMigration;
 import com.github.ibanetchep.msquests.database.migrations.CreateArtisanTablesMigration;
 import com.github.ibanetchep.msquests.database.migrations.CreateImportMapMigration;
@@ -23,6 +24,7 @@ public class MigrationManager {
         migrations.add(new AddRotationTableMigration(jdbi));
         migrations.add(new CreateArtisanTablesMigration(jdbi));
         migrations.add(new CreateImportMapMigration(jdbi));
+        migrations.add(new AddReachedStageMigration(jdbi));
     }
 
     public void initialize() {

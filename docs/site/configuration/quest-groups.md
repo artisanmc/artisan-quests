@@ -122,6 +122,25 @@ another group), or when two quests claim the same one: the progress would go to 
 Changing a key without `old_key` starts the quest over for everyone. The statistics already
 recorded keep the old key.
 
+## Changing a quest players have started
+
+What a player did or passed stays theirs when you change the quest:
+
+| You change | A player in the quest |
+| --- | --- |
+| Raise a target | Keeps their progress. An objective they had completed stays completed. |
+| Lower a target | An objective already past the new target is completed. A quest with nothing left completes, with its rewards, the next time the player loads. |
+| Add a stage or an objective | Does it if it comes after where they stand. One added behind them is not asked of them. |
+| Remove a stage or an objective | Goes on with what is left; with nothing left, the quest completes. |
+| Reorder stages | Stays on the stage they had reached; what now comes before it is behind them. |
+| Add a quest to a `sequential` group | Does it if it comes after their current quest. One added behind them is skipped (a quest with `completed_when` still follows its state). |
+| Take a quest out of the group | Its progress is kept and it still holds its active slot; it comes back as it was with the quest. |
+
+Still to avoid on a quest in progress: changing an objective's `key` (it starts again from zero),
+changing its `type` under the same key (the progress of the old one is kept), moving a quest to
+another group, and adding a `reset` to a group that had none (quests completed before the
+current period can be done again).
+
 Files written by earlier versions carry a `uid` on the group and on each quest. It is still
 read: progress stored under it moves to the keys the first time the file loads. New files
 do not need one.
