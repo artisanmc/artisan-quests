@@ -84,6 +84,22 @@ public class KeyChangeSqlRepository extends SqlRepository implements KeyChangeRe
             }
 
             for (KeyChange change : changes) {
+                if (!(change instanceof KeyChange.QuestMoved quest)) continue;
+                if (names.stream().noneMatch(name -> name.group().equals(quest.fromGroup()) && name.quest().equals(quest.from()))) {
+                    continue;
+                }
+                moved += handle.createUpdate("""
+                                UPDATE artisan_quests_quest
+                                SET group_key = :group, quest_key = :to
+                                WHERE group_key = :fromGroup AND quest_key = :from""")
+                        .bind("fromGroup", quest.fromGroup())
+                        .bind("from", quest.from())
+                        .bind("group", quest.group())
+                        .bind("to", quest.to())
+                        .execute();
+            }
+
+            for (KeyChange change : changes) {
                 if (!(change instanceof KeyChange.Quest quest)) continue;
                 if (names.stream().noneMatch(name -> name.group().equals(quest.group()) && name.quest().equals(quest.from()))) {
                     continue;

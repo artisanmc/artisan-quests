@@ -224,7 +224,7 @@ function stageRows(
   const stages = quest.stages.map((stage, index) => {
     const passed = index < reachedIndex;
     const objectives = stage.objectives.map((o) => {
-      const row = objectiveRow(o, stored?.get(o.key), lang);
+      const row = objectiveRow(o, storedFor(o, stored), lang);
       if (passed && row.status_key !== "FAILED") row.status_key = "COMPLETED";
       return row;
     });
@@ -254,6 +254,28 @@ function stageRows(
     }
   }
   return stages;
+}
+
+/**
+ * `QuestFactory.stored`: the progress under the objective's key, else under one of its former
+ * keys (`old_key`, or the key the file had before this draft changed it); progress stored for
+ * another objective type is not its own.
+ */
+function storedFor(
+  objective: Objective,
+  stored: Map<string, StoredObjective> | undefined,
+): StoredObjective | undefined {
+  if (!stored) return undefined;
+  const written = objective.params.old_key;
+  const former = [...(Array.isArray(written) ? written : written == null ? [] : [written]), objective.savedKey];
+  let found = stored.get(objective.key);
+  for (const key of former) {
+    if (found) break;
+    if (typeof key === "string") found = stored.get(key);
+  }
+  if (!found) return undefined;
+  const type = str(found.row.type);
+  return type === "" || type === objective.type ? found : undefined;
 }
 
 function objectiveRow(objective: Objective, stored: StoredObjective | undefined, lang: string): Row {

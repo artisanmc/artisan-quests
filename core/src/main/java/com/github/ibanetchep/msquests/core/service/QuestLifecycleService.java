@@ -161,20 +161,48 @@ public class QuestLifecycleService {
     }
 
     /**
-     * Completes, rewards included, the actor's quests in progress that have nothing left to do.
-     * A quest only checks its own end when one of its objectives completes; a change of content
-     * can leave it with none (a target lowered under the progress, its last stage removed), and
-     * nothing would ever end it.
+     * Brings the actor's quests in progress in line with the content they were just rebuilt from.
+     * A quest only reacts when one of its objectives completes in play; a change of content can
+     * complete an objective (a target lowered under the progress) or leave the quest with nothing
+     * to do (its last stage removed), and nothing would ever follow.
+     *
+     * <p>Each objective completed that way gets its completion now: event, {@code
+     * objective_complete} actions, and the stage's event once when it ends with it. A quest with
+     * nothing left is then completed, rewards included. What the actor already passed is left
+     * alone: nothing is run twice.
      */
-    public void completeFinishedQuests(QuestActor actor) {
+    public void settleLoadedQuests(QuestActor actor) {
         for (Quest quest : List.copyOf(actor.getQuests().values())) {
-            if (!quest.shouldComplete()) continue;
+            if (!quest.isActive() || !(quest.shouldComplete() || hasUnrecordedCompletion(quest))) continue;
             executor.execute(quest.getId(), updatedQuest -> {
-                if (!updatedQuest.shouldComplete()) return;
-                finalizeQuestCompletion(updatedQuest);
-                persistenceService.saveQuest(updatedQuest).join();
+                if (!updatedQuest.isActive()) return;
+                boolean changed = false;
+                for (com.github.ibanetchep.msquests.core.quest.actor.QuestStage stage : updatedQuest.getStagesList()) {
+                    boolean ended = false;
+                    for (QuestObjective objective : stage.getObjectiveList()) {
+                        if (objective.isCompletionRecorded()) continue;
+                        objective.complete();
+                        dispatcher.dispatch(new CoreQuestObjectiveCompletedEvent(objective, null));
+                        chains.run(updatedQuest.getQuestGroup().getObjectiveCompleteActions(), ChainContext.of(objective));
+                        chains.run(updatedQuest.getQuestConfig().getObjectiveCompleteActions(), ChainContext.of(objective));
+                        ended = true;
+                        changed = true;
+                    }
+                    if (ended && !stage.isPassed() && stage.isCompleted()) {
+                        dispatcher.dispatch(new CoreQuestStageCompletedEvent(stage, null));
+                    }
+                }
+                if (updatedQuest.shouldComplete()) {
+                    finalizeQuestCompletion(updatedQuest);
+                    changed = true;
+                }
+                if (changed) persistenceService.saveQuest(updatedQuest).join();
             });
         }
+    }
+
+    private static boolean hasUnrecordedCompletion(Quest quest) {
+        return quest.getObjectives().stream().anyMatch(objective -> !objective.isCompletionRecorded());
     }
 
     private void finalizeQuestCompletion(Quest quest) {

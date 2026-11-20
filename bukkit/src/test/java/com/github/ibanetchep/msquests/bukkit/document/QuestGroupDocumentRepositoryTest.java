@@ -342,6 +342,68 @@ class QuestGroupDocumentRepositoryTest {
     }
 
     @Test
+    void aQuestThatCameFromAnotherGroupSaysSoInOldKey() throws Exception {
+        Files.writeString(project.resolve("quest_groups/side.yaml"),
+                handWritten("", "    old_key: [{ group: story, key: dig }, { group: side, key: excavate }]\n"));
+
+        QuestConfigLoad load = load();
+
+        assertEquals(java.util.List.of(), load.failures());
+        assertEquals(java.util.List.of(
+                new KeyChange.QuestMoved("story", "dig", "side", "mine"),
+                new KeyChange.Quest("side", "excavate", "mine")), load.keyChanges(), "its own group is a plain former key");
+    }
+
+    @Test
+    void refusesAQuestMovedFromAPlaceStillHeldOrClaimedTwice() throws Exception {
+        Files.writeString(project.resolve("quest_groups/a.yaml"), handWritten("", "    old_key: { group: b, key: fish }\n"));
+        Files.writeString(project.resolve("quest_groups/b.yaml"), handWritten("", "    old_key: { group: gone, key: dig }\n"));
+        Files.writeString(project.resolve("quest_groups/c.yaml"), handWritten("", "    old_key: { group: gone, key: dig }\n"));
+
+        QuestConfigLoad load = load();
+
+        String failures = String.join("\n", load.failures());
+        assertTrue(failures.contains("group 'a': quest 'mine': old_key names 'b/fish', which is still a quest"), failures);
+        assertTrue(failures.contains("group 'c': quest 'mine': 'gone/dig' is already the old_key of 'b/mine'"), failures);
+        assertEquals(java.util.Set.of("b"), load.groups().keySet());
+        assertEquals(java.util.List.of(new KeyChange.QuestMoved("gone", "dig", "b", "mine")), load.keyChanges());
+    }
+
+    @Test
+    void anObjectiveSaysItsFormerKeysInOldKey() throws Exception {
+        Files.writeString(project.resolve("quest_groups/daily.yaml"), handWritten("", "")
+                .replace("{ key: stone, type: block_break,", "{ key: stone, old_key: [rock, cobble], type: block_break,"));
+
+        QuestConfigLoad load = load();
+
+        assertEquals(java.util.List.of(), load.failures());
+        assertEquals(java.util.List.of(), load.keyChanges(), "read when the quest is rebuilt: no row to move");
+        var objectives = new com.github.ibanetchep.msquests.core.factory.QuestObjectiveFactory();
+        objectives.register(com.github.ibanetchep.msquests.bukkit.quest.objective.blockbreak.BlockBreakObjectiveConfig.class,
+                com.github.ibanetchep.msquests.bukkit.quest.objective.blockbreak.BlockBreakObjective.class,
+                org.mockito.Mockito.mock(com.github.ibanetchep.msquests.core.quest.objective.QuestObjectiveHandler.class));
+        var stone = objectives.createConfig(load.groups().get("daily").quests().getFirst().stages().getFirst().objectives().getFirst());
+        assertEquals(java.util.List.of("rock", "cobble"), stone.getFormerKeys());
+    }
+
+    @Test
+    void refusesAnObjectiveOldKeyThatIsStillAnObjectiveOrClaimedTwice() throws Exception {
+        String two = "{ key: stone, type: block_break, material: STONE, amount: 64 }\n"
+                + "          - { key: coal, type: block_break, material: COAL_ORE, amount: 8";
+        Files.writeString(project.resolve("quest_groups/a.yaml"), handWritten("", "")
+                .replace("{ key: stone, type: block_break, material: STONE, amount: 64", two + ", old_key: stone"));
+        Files.writeString(project.resolve("quest_groups/b.yaml"), handWritten("", "")
+                .replace("{ key: stone, type: block_break, material: STONE, amount: 64 }",
+                        "{ key: stone, old_key: rock, type: block_break, material: STONE, amount: 64 }\n"
+                                + "          - { key: coal, old_key: rock, type: block_break, material: COAL_ORE, amount: 8 }"));
+
+        String failures = String.join("\n", load().failures());
+
+        assertTrue(failures.contains("objective 'coal': old_key 'stone' is still the key of an objective of this quest"), failures);
+        assertTrue(failures.contains("objective 'coal': old_key 'rock' is already the old_key of 'stone'"), failures);
+    }
+
+    @Test
     void refusesAGroupOldKeyThatIsStillAGroupOrClaimedTwice() throws Exception {
         Files.writeString(project.resolve("quest_groups/a.yaml"), handWritten("old_key: b\n", ""));
         Files.writeString(project.resolve("quest_groups/b.yaml"), handWritten("old_key: former\n", ""));

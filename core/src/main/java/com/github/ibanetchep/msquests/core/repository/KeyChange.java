@@ -20,6 +20,13 @@ public sealed interface KeyChange {
     record Quest(String group, String from, String to) implements KeyChange {
     }
 
+    /**
+     * A quest that was in another group, {@code fromGroup}, under key {@code from}: its rows take
+     * {@code group} and {@code to}. {@code fromGroup} is that group's key as it is now.
+     */
+    record QuestMoved(String fromGroup, String from, String group, String to) implements KeyChange {
+    }
+
     /** Rows written for the group's former {@code uid}: its rotations take the group key. */
     record GroupUid(String uid, String group) implements KeyChange {
     }

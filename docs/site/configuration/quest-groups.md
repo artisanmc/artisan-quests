@@ -89,7 +89,7 @@ quests:
 | `old_key` | key or list | The keys it had before. See [Changing a key](#changing-a-key). |
 | `title`, `description` | text | By language. |
 | `stages[]` | list | Done in order; each has a `key` and `objectives`. |
-| `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys. |
+| `stages[].objectives[]` | list | `key`, `type`, `amount`, and the type's own keys; `old_key` for a former key. |
 | `actions.complete` | action chain | The reward: any Artisan action. |
 | `completed_when` | conditions | In a `sequential` group: the state the quest aims at. |
 
@@ -136,10 +136,26 @@ What a player did or passed stays theirs when you change the quest:
 | Add a quest to a `sequential` group | Does it if it comes after their current quest. One added behind them is skipped (a quest with `completed_when` still follows its state). |
 | Take a quest out of the group | Its progress is kept and it still holds its active slot; it comes back as it was with the quest. |
 
-Still to avoid on a quest in progress: changing an objective's `key` (it starts again from zero),
-changing its `type` under the same key (the progress of the old one is kept), moving a quest to
-another group, and adding a `reset` to a group that had none (quests completed before the
-current period can be done again).
+| Change an objective's `type` | Starts that objective from zero: progress made for another type does not count. |
+| Change an objective's `key` | Keeps their progress when the objective names its former key in `old_key` (the editor writes it). Without it, the objective starts from zero. |
+| Move a quest to another group | Keeps their progress when the quest says where it was: `old_key: { group: story, key: mine }`. |
+
+An objective completed by a lowered target runs its `objective_complete` actions when the player
+next loads, once.
+
+```yaml
+quests:
+  - key: mine
+    old_key: { group: story, key: mine }   # was in story.yaml
+    stages:
+      - key: dig
+        objectives:
+          - { key: cobble, old_key: stone, type: block_break, material: COBBLESTONE, amount: 64 }
+```
+
+Still to avoid: adding a `reset` to a group that had none (quests completed before the current
+period can be done again), and reusing the key of a removed objective for a new one of the same
+type (it starts with the old progress).
 
 Files written by earlier versions carry a `uid` on the group and on each quest. It is still
 read: progress stored under it moves to the keys the first time the file loads. New files

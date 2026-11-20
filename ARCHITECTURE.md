@@ -729,9 +729,21 @@ actor did or passed stays theirs, whatever the content becomes:
   yet does the new stage. The legacy `msquests_quest` table records no stage: there the
   current stage stays the first one with an objective left. When the stage recorded is gone, the current stage is the first one
   with an objective left. A row from before the column gets it at its first load.
-- **A quest with nothing left completes when its actor loads**
-  (`QuestLifecycleService.completeFinishedQuests`, rewards included): a quest otherwise only
-  checks its end when one of its objectives completes.
+- **What a change of content completed is settled when the actor loads**
+  (`QuestLifecycleService.settleLoadedQuests`, called by `QuestActorService.loadActor`): a quest
+  otherwise only reacts when one of its objectives completes in play. An objective whose progress
+  reached a lowered target gets its completion (event, `objective_complete` actions, the stage's
+  event once); a quest with nothing left is completed, rewards included. An objective stored as
+  completed is never run again.
+- **An objective's progress follows its key and its type** (`QuestFactory.stored`): read under its
+  key, else under one of its `old_key` (one key or a list, on the objective; the next save writes
+  it under the current key, no row is moved); a row stored for another objective type is ignored,
+  the objective starts from zero. The reader refuses an objective `old_key` that is still an
+  objective of the quest or is claimed twice.
+- **A quest moved to another group keeps its rows** when it says where it was: `old_key:
+  { group: story, key: mine }` on the quest gives a `KeyChange.QuestMoved`, applied with the
+  other key changes. `QuestGroupDocumentRepository` drops the group whose quest claims a place
+  that is still a quest, or one already claimed.
 - **In a `sequential` group, a step without `completed_when` added behind the actor counts as
   done** (`ladderIndex`): the quest in progress is not dropped for it.
 - **A quest in progress whose config left its group keeps its active slot**
@@ -739,10 +751,10 @@ actor did or passed stays theirs, whatever the content becomes:
   handed out meanwhile.
 
 `QuestContentChangeTest` holds one test per kind of change. Its `harmful…` tests pin what is
-still lost or wrong: a changed objective key (progress back to 0, the old row kept and found
-again if the key is reused), a changed objective type under the same key (progress kept), a
-quest moved to another group, a reset added to a group that had none, and the
-`objective_complete` actions skipped when a lowered target completes an objective. The editor's
+still lost or wrong: a key changed without `old_key` (objective, or quest moved to another
+group), the row of a dropped objective key found again when a later objective of the same type
+reuses the key, and a reset added to a group that had none. The editor writes an objective's
+`old_key` when its key changes (`objectiveOut` in `editor/src/model.ts`). The editor's
 preview follows the same rules (`editor/src/sourceRows.ts`, vectors in `testdata/sources/`).
 
 ### Imports from other quest plugins

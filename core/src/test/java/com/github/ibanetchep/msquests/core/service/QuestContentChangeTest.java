@@ -129,7 +129,7 @@ class QuestContentChangeTest {
     class Objectives {
 
         @Test
-        void harmfulAChangedObjectiveKeyStartsItAgainFromZero() {
+        void harmfulAChangedObjectiveKeyWithoutOldKeyStartsItAgainFromZero() {
             publish(story(quest("mine", stage("dig", objective("stone", 100)))));
             UUID id = rows.inProgress("story", "mine", Map.of("stone", 60));
 
@@ -154,13 +154,28 @@ class QuestContentChangeTest {
         }
 
         @Test
-        void harmfulAChangedTypeUnderTheSameKeyKeepsTheProgressOfTheFormerObjective() {
+        void safeAChangedTypeUnderTheSameKeyStartsFromZero() {
             publish(story(quest("mine", stage("dig", objective("task", "block_break", 100)))));
-            UUID id = rows.inProgress("story", "mine", Map.of("task", 60));
+            UUID id = rows.inProgress("story", "mine", Map.of());
+            rows.setObjective(id, "task", "block_break", 60, QuestObjectiveStatus.IN_PROGRESS);
 
-            publish(story(quest("mine", stage("dig", objective("task", "kill_entity", 100)))));
+            change(story(quest("mine", stage("dig", objective("task", "kill_entity", 100)))));
 
-            assertEquals(60, objective(reload(id), "task").getProgress(), "60 blocks broken count as 60 kills");
+            assertEquals(0, objective(reload(id), "task").getProgress(), "60 blocks broken are not 60 kills");
+        }
+
+        @Test
+        void safeAChangedObjectiveKeyKeepsItsProgressThroughOldKey() {
+            publish(story(quest("mine", stage("dig", objective("stone", 100)))));
+            UUID id = rows.inProgress("story", "mine", Map.of("stone", 60));
+
+            change(story(quest("mine", stage("dig", objective("cobble", "test", 100, "stone")))));
+            Quest quest = reload(id);
+            assertEquals(60, objective(quest, "cobble").getProgress());
+
+            // Once saved under the new key, that row is the one read, whatever the old one holds.
+            progress.contributeNow(objective(quest, "cobble"), () -> 5, null);
+            assertEquals(65, objective(reload(id), "cobble").getProgress());
         }
 
         @Test
@@ -192,21 +207,24 @@ class QuestContentChangeTest {
     class Targets {
 
         @Test
-        void harmfulATargetLoweredUnderTheProgressCompletesTheObjectiveInSilence() {
-            QuestGroupConfig group = story(quest("mine",
-                    stage("dig", objective("stone", 100)), stage("smelt", objective("iron", 10))));
-            publish(group);
-            UUID id = rows.inProgress("story", "mine", Map.of("stone", 60));
+        void safeATargetLoweredUnderTheProgressCompletesTheObjectiveWithItsActionsWhenItLoads() {
+            publish(story(quest("mine",
+                    stage("dig", objective("stone", 100), objective("coal", 40)), stage("smelt", objective("iron", 10)))));
+            UUID id = rows.inProgress("story", "mine", Map.of("stone", 60, "coal", 30));
 
-            publish(story(rewarding(quest("mine", stage("dig", objective("stone", 50)), stage("smelt", objective("iron", 10))))));
+            change(story(rewarding(quest("mine",
+                    stage("dig", objective("stone", 50), objective("coal", 20)), stage("smelt", objective("iron", 10))))));
             Quest quest = reload(id);
-            lifecycle.refreshActor(actor);
+            lifecycle.settleLoadedQuests(actor);
 
-            assertTrue(objective(quest, "stone").isCompleted());
             assertEquals("smelt", quest.getCurrentStage().getKey(), "the player is on the next stage");
-            assertEquals(0, count(CoreQuestObjectiveCompletedEvent.class), "no objective completed event");
-            assertEquals(0, count(CoreQuestStageCompletedEvent.class), "no stage completed event, so no statistic");
-            assertFalse(chainsRun.contains(OBJECTIVE_REWARD), "the objective_complete actions never ran");
+            assertEquals(2, count(CoreQuestObjectiveCompletedEvent.class));
+            assertEquals(2, chainsRun.stream().filter(OBJECTIVE_REWARD::equals).count(), "the objective_complete actions ran for both");
+            assertEquals(1, count(CoreQuestStageCompletedEvent.class), "the stage is recorded as completed, once");
+
+            reload(id);
+            lifecycle.settleLoadedQuests(actor);
+            assertEquals(2, chainsRun.stream().filter(OBJECTIVE_REWARD::equals).count(), "the next load runs nothing more");
         }
 
         @Test
@@ -216,7 +234,7 @@ class QuestContentChangeTest {
 
             change(story(rewarding(quest("mine", stage("dig", objective("stone", 50))))));
             Quest quest = reload(id);
-            lifecycle.completeFinishedQuests(actor);
+            lifecycle.settleLoadedQuests(actor);
 
             assertEquals(QuestStatus.COMPLETED, quest.getStatus());
             assertEquals(QuestStatus.COMPLETED, rows.status(id), "and saved so");
@@ -225,7 +243,7 @@ class QuestContentChangeTest {
             assertEquals(0, actor.getActorQuestGroup(configs.getQuestGroupConfigs().get("story")).getInProgressCount(),
                     "its active slot is free again");
 
-            lifecycle.completeFinishedQuests(actor);
+            lifecycle.settleLoadedQuests(actor);
             assertEquals(1, chainsRun.stream().filter(QUEST_REWARD::equals).count(), "a second pass pays nothing more");
         }
 
@@ -328,7 +346,7 @@ class QuestContentChangeTest {
 
             change(story(rewarding(quest("mine", stage("dig", objective("stone", 50))))));
             Quest quest = reload(id);
-            lifecycle.completeFinishedQuests(actor);
+            lifecycle.settleLoadedQuests(actor);
 
             assertEquals(QuestStatus.COMPLETED, quest.getStatus());
             assertEquals(1, chainsRun.stream().filter(QUEST_REWARD::equals).count());
@@ -414,7 +432,7 @@ class QuestContentChangeTest {
         }
 
         @Test
-        void harmfulAQuestMovedToAnotherGroupLeavesItsProgressBehind() {
+        void harmfulAQuestMovedToAnotherGroupWithoutOldKeyLeavesItsProgressBehind() {
             publish(story(quest("mine", stage("dig", objective("stone", 50)))));
             UUID id = rows.inProgress("story", "mine", Map.of("stone", 20));
             reload(id);
@@ -599,14 +617,18 @@ class QuestContentChangeTest {
     }
 
     private static QuestObjectiveConfig objective(String key, String type, int target) {
-        return new TestObjectiveConfig(key, type, target);
+        return new TestObjectiveConfig(key, type, target, null);
+    }
+
+    private static QuestObjectiveConfig objective(String key, String type, int target, String oldKey) {
+        return new TestObjectiveConfig(key, type, target, oldKey);
     }
 
     static final class TestObjectiveConfig extends QuestObjectiveConfig {
         private final int target;
 
-        TestObjectiveConfig(String key, String type, int target) {
-            super(new QuestObjectiveConfigDTO(key, type, Map.of()));
+        TestObjectiveConfig(String key, String type, int target, String oldKey) {
+            super(new QuestObjectiveConfigDTO(key, type, oldKey != null ? Map.of("old_key", oldKey) : Map.of()));
             this.target = target;
         }
 
@@ -667,7 +689,11 @@ class QuestContentChangeTest {
         }
 
         void setObjective(UUID questId, String key, int value, QuestObjectiveStatus status) {
-            quests.get(questId).objectives().put(key, new QuestObjectiveDTO(questId, key, "test", status, value, null));
+            setObjective(questId, key, "test", value, status);
+        }
+
+        void setObjective(UUID questId, String key, String type, int value, QuestObjectiveStatus status) {
+            quests.get(questId).objectives().put(key, new QuestObjectiveDTO(questId, key, type, status, value, null));
         }
 
         QuestStatus status(UUID questId) {

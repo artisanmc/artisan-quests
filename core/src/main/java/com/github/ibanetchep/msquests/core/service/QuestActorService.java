@@ -63,7 +63,7 @@ public class QuestActorService {
                 questLifecycleService.expireQuests(actor);
                 platform.runSync(() -> {
                     // First: a quest ended here frees its slot before the group hands out quests.
-                    questLifecycleService.completeFinishedQuests(actor);
+                    questLifecycleService.settleLoadedQuests(actor);
                     questLifecycleService.fireActorLoadActions(actor);
                 });
             });

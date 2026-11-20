@@ -28,6 +28,11 @@ export interface Text {
 
 export interface Objective {
   key: string;
+  /**
+   * The key the file had when it was read; none for an objective added since. When it differs
+   * from `key` at save, it is written in `old_key`, so the progress stored under it follows.
+   */
+  savedKey?: string;
   type: string;
   /** The type's own fields (`material`, `amount`…), verbatim. */
   params: Raw;
@@ -57,6 +62,8 @@ export interface Quest {
   savedKey?: string;
   /** `old_key`: the keys this quest had, whose progress the server moves onto `key`. */
   oldKeys: string[];
+  /** The `{group, key}` entries of `old_key` (a quest that came from another group), kept as written. */
+  oldPlaces: Raw[];
   tier: string;
   title: Text;
   description: Text;
@@ -229,6 +236,7 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
           const obj = asMap(o);
           return {
             key: asString(obj.key) || `objective_${oi + 1}`,
+            savedKey: asString(obj.key) || undefined,
             type: asString(obj.type),
             params: without(obj, "key", "type"),
           };
@@ -248,6 +256,7 @@ export function parseQuestGroup(src: Raw, ctx: DocumentParseContext): DocumentPa
       savedUid,
       savedKey: asString(q.key) || undefined,
       oldKeys: keyList(q.old_key),
+      oldPlaces: placeList(q.old_key),
       tier: asString(q.tier),
       title: text(q.title),
       description: text(q.description),
@@ -321,6 +330,12 @@ function keyList(value: unknown): string[] {
   return items.map((item) => asString(item)).filter((key) => key !== "");
 }
 
+/** The `{group, key}` entries of an `old_key`: written by hand, never by the editor. */
+function placeList(value: unknown): Raw[] {
+  const items = Array.isArray(value) ? value : value == null ? [] : [value];
+  return items.filter((item) => item !== null && typeof item === "object" && !Array.isArray(item)) as Raw[];
+}
+
 /**
  * Remembers the key a quest of the file is leaving, so the server moves its progress. A quest
  * added since the file was read has no progress to move.
@@ -344,9 +359,30 @@ export function oldKeysOf(quest: Quest, groupKeys: ReadonlySet<string>): string[
   return out;
 }
 
-function oldKeyField(quest: Quest, groupKeys: ReadonlySet<string>): string | string[] | undefined {
-  const keys = oldKeysOf(quest, groupKeys);
+function oldKeyField(quest: Quest, groupKeys: ReadonlySet<string>): unknown {
+  const keys: unknown[] = [...oldKeysOf(quest, groupKeys), ...quest.oldPlaces];
   return keys.length === 0 ? undefined : keys.length === 1 ? keys[0] : keys;
+}
+
+/**
+ * An objective as written. Its `old_key` names the keys whose stored progress it takes over:
+ * the ones the file names and the one it had when read, never its own key nor a key another
+ * objective of the quest holds now (the server refuses that file).
+ */
+function objectiveOut(objective: Objective, questKeys: ReadonlySet<string>): Raw {
+  const { old_key: written, ...params } = objective.params;
+  const olds: string[] = [];
+  for (const key of [...keyList(written), objective.savedKey ?? ""]) {
+    if (key === "" || key === objective.key || questKeys.has(key) || olds.includes(key)) continue;
+    olds.push(key);
+  }
+  const old = olds.length === 0 ? undefined : olds.length === 1 ? olds[0] : olds;
+  return compactOld({ key: objective.key, old_key: old, type: objective.type, ...params });
+}
+
+function compactOld(raw: Raw): Raw {
+  if (raw.old_key === undefined) delete raw.old_key;
+  return raw;
 }
 
 // ------------------------------------------------------------------ serialize
@@ -396,8 +432,9 @@ export function serializeQuestGroup(group: QuestGroup, project: unknown): Raw {
   for (const tier of group.tiers) tiers[tier.key] = { ...tier.rest, title: t(tier.title) };
 
   const keys = new Set(group.quests.map((q) => q.key));
-  const quests = group.quests.map((q) =>
-    compact({
+  const quests = group.quests.map((q) => {
+    const objectiveKeys = new Set(q.stages.flatMap((s) => s.objectives.map((o) => o.key)));
+    return compact({
       key: q.key,
       uid: q.savedUid,
       old_key: oldKeyField(q, keys),
@@ -412,11 +449,11 @@ export function serializeQuestGroup(group: QuestGroup, project: unknown): Raw {
           title: optional(s.title),
           flow: s.flow,
           ...s.rest,
-          objectives: s.objectives.map((o) => ({ key: o.key, type: o.type, ...o.params })),
+          objectives: s.objectives.map((o) => objectiveOut(o, objectiveKeys)),
         }),
       ),
-    }),
-  );
+    });
+  });
 
   const fields: Raw = {
     ...group.rest,

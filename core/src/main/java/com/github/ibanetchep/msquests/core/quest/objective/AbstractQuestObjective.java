@@ -78,6 +78,11 @@ public abstract class AbstractQuestObjective<C extends QuestObjectiveConfig> imp
     }
 
     @Override
+    public boolean isCompletionRecorded() {
+        return completed || !isCompleted();
+    }
+
+    @Override
     public void complete() {
         incrementProgress(target - getProgress());
         completed = true;

@@ -245,6 +245,55 @@ describe("identity", () => {
     expect(written(group)[0]!.old_key).toBe("dig");
   });
 
+  it("writes old_key on an objective of the file whose key changes, and keeps the ones written by hand", () => {
+    const withStages = {
+      ...handWritten,
+      quests: [
+        {
+          key: "mine",
+          title: "Mine",
+          stages: [
+            {
+              key: "dig",
+              objectives: [
+                { key: "stone", old_key: "rock", type: "block_break", material: "STONE", amount: 64 },
+                { key: "coal", type: "block_break", material: "COAL_ORE", amount: 8 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const objectivesOf = (group: QuestGroup) =>
+      (written(group)[0]!.stages as { objectives: Record<string, unknown>[] }[])[0]!.objectives;
+
+    const group = parse(withStages);
+    expect(objectivesOf(group)).toEqual(withStages.quests[0]!.stages[0]!.objectives);
+
+    const [stone, coal] = group.quests[0]!.stages[0]!.objectives;
+    stone!.key = "cobble";
+    coal!.key = "charcoal";
+    group.quests[0]!.stages[0]!.objectives.push({ key: "iron", type: "block_break", params: { amount: 1 } });
+    const out = objectivesOf(group);
+    expect(Object.keys(out[0]!).slice(0, 2)).toEqual(["key", "old_key"]);
+    expect(out[0]!.old_key).toEqual(["rock", "stone"]);
+    expect(out[1]!.old_key).toBe("coal");
+    expect("old_key" in out[2]!).toBe(false);
+
+    // A key taken over by another objective is no longer a former key of the first.
+    group.quests[0]!.stages[0]!.objectives[2]!.key = "stone";
+    expect(objectivesOf(group)[0]!.old_key).toBe("rock");
+  });
+
+  it("keeps a quest's former place in another group as it was written", () => {
+    const moved = { group: "story", key: "dig" };
+    const group = parse({
+      ...handWritten,
+      quests: [{ key: "mine", old_key: [moved, "pick"], title: "Mine", stages: [] }],
+    });
+    expect(written(group)[0]!.old_key).toEqual(["pick", moved]);
+  });
+
   it("drops a former key another quest of the group now holds: the server would refuse the file", () => {
     const group = parse({
       ...handWritten,

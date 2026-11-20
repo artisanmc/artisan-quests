@@ -77,6 +77,13 @@ export function duplicateQuest(
   copy.savedUid = undefined;
   copy.savedKey = undefined;
   copy.oldKeys = [];
+  copy.oldPlaces = [];
+  for (const stage of copy.stages) {
+    for (const objective of stage.objectives) {
+      objective.savedKey = undefined;
+      delete objective.params.old_key;
+    }
+  }
   copy.key = freeKey(`${quest.key}_copy`, takenKeys);
   copy.title = copyText(quest.title);
   copy.description = copyText(quest.description);

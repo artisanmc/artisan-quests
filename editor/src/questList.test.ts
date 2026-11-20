@@ -22,6 +22,7 @@ function quest(over: Partial<Quest> = {}): Quest {
     savedUid: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     savedKey: "level_2",
     oldKeys: ["level_two"],
+    oldPlaces: [],
     tier: "",
     title: { key: "t.title" },
     description: { key: "t.description" },

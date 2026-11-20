@@ -147,6 +147,7 @@ public class QuestConfigService {
     private static String groupOf(KeyChange change) {
         if (change instanceof KeyChange.Group group) return group.to();
         if (change instanceof KeyChange.Quest quest) return quest.group();
+        if (change instanceof KeyChange.QuestMoved quest) return quest.group();
         if (change instanceof KeyChange.GroupUid group) return group.group();
         return ((KeyChange.QuestUid) change).group();
     }

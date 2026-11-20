@@ -194,6 +194,38 @@ describe("questsLocalRows", () => {
     expect(walk).toMatchObject({ completed: false, status_key: "IN_PROGRESS" });
   });
 
+  it("starts an objective whose type changed from zero, and follows a changed key", () => {
+    const draft = structuredClone(daily) as { quests: { stages: { objectives: Row[] }[] }[] };
+    const [stone, walk] = draft.quests[0]!.stages[0]!.objectives;
+    stone!.type = "travel";
+    stone!.distance = 64;
+    walk!.key = "stroll";
+    walk!.old_key = "walk";
+    const { rows } = load(draft as unknown as Row, "en");
+    const serverRows = [
+      {
+        id: "uuid",
+        quest_key: "miner",
+        group: "daily",
+        status_key: "IN_PROGRESS",
+        stages: [
+          {
+            key: "dig",
+            active: true,
+            objectives: [
+              { key: "stone", type: "block_break", progress: 32, status_key: "IN_PROGRESS" },
+              { key: "walk", type: "travel", progress: 10, status_key: "PENDING" },
+            ],
+          },
+        ],
+      },
+    ];
+    const [active] = rows(ACTIVE, { serverRows });
+    const [first, second] = (active!.stages as Row[])[0]!.objectives as Row[];
+    expect(first).toMatchObject({ key: "stone", progress: 0 });
+    expect(second).toMatchObject({ key: "stroll", progress: 10 });
+  });
+
   it("narrows quests to the group the menu asks for", () => {
     const { rows } = load(daily, "en");
     expect(rows(QUESTS, { params: { group: "weekly" } })).toEqual([]);

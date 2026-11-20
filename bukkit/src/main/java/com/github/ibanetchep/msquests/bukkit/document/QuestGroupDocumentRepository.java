@@ -75,7 +75,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
         Map<String, QuestGroupConfigDTO> groups = new LinkedHashMap<>();
         Map<String, String> uidOwners = new HashMap<>();
         Map<String, String> oldGroupOwners = new HashMap<>();
-        List<KeyChange> changes = new ArrayList<>();
+        Map<String, List<KeyChange>> changesByGroup = new LinkedHashMap<>();
         Map<String, String> langs = new HashMap<>();
         for (Map.Entry<String, List<GroupFile>> entry : byKey.entrySet()) {
             String key = entry.getKey();
@@ -131,10 +131,47 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
             }
             uidOwners.putAll(claimed);
             oldGroupOwners.putAll(claimedOld);
-            changes.addAll(groupChanges);
+            changesByGroup.put(key, groupChanges);
             groups.put(key, group);
         }
+        dropMovesFromLiveQuests(groups, changesByGroup, failures);
+        List<KeyChange> changes = new ArrayList<>();
+        changesByGroup.values().forEach(changes::addAll);
         return new QuestConfigLoad(groups, failures, changes);
+    }
+
+    /**
+     * A quest that says it came from another group ({@code old_key: {group, key}}) takes the rows
+     * stored there. The group that claims a place still held by a quest, or one already claimed,
+     * is not loaded: the progress of that quest would go to the wrong one.
+     */
+    private static void dropMovesFromLiveQuests(Map<String, QuestGroupConfigDTO> groups,
+                                                Map<String, List<KeyChange>> changesByGroup, List<String> failures) {
+        Map<String, String> owners = new HashMap<>();
+        for (String key : List.copyOf(changesByGroup.keySet())) {
+            String clash = null;
+            Map<String, String> claimed = new HashMap<>();
+            for (KeyChange change : changesByGroup.get(key)) {
+                if (clash != null || !(change instanceof KeyChange.QuestMoved moved)) continue;
+                String place = moved.fromGroup() + "/" + moved.from();
+                QuestGroupConfigDTO source = groups.get(moved.fromGroup());
+                if (source != null && source.quests().stream().anyMatch(quest -> quest.key().equals(moved.from()))) {
+                    clash = "quest '" + moved.to() + "': old_key names '" + place + "', which is still a quest:"
+                            + " remove it from old_key, or its progress would move to '" + key + "/" + moved.to() + "'";
+                } else {
+                    String other = owners.get(place);
+                    if (other == null) other = claimed.put(place, key + "/" + moved.to());
+                    if (other != null) clash = "quest '" + moved.to() + "': '" + place + "' is already the old_key of '" + other + "'";
+                }
+            }
+            if (clash != null) {
+                failures.add("group '" + key + "': " + clash);
+                groups.remove(key);
+                changesByGroup.remove(key);
+            } else {
+                owners.putAll(claimed);
+            }
+        }
     }
 
     /**

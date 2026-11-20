@@ -527,6 +527,7 @@ function GroupView({
           ),
           uid,
           oldKeys: [],
+          oldPlaces: [],
           tier: "",
           title: { key: titleKey },
           description: { key: newTextKey() },

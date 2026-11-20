@@ -12,7 +12,10 @@ sidebar:
   player is not asked of them, and a quest left with nothing to do (a lowered target, a removed
   stage) completes with its rewards the next time the player loads instead of staying in progress
   forever. In a `sequential` group, a quest added before the current one no longer deletes it. A
-  quest in progress taken out of its group keeps its active slot. See
+  quest in progress taken out of its group keeps its active slot. An objective keeps its progress
+  when its key changes (`old_key` on the objective, written by the editor), starts from zero when its
+  type changes, and runs its `objective_complete` actions when a lowered target completes it. A quest
+  moved to another group keeps its progress with `old_key: { group, key }`. See
   "Changing a quest players have started" in the quest groups page.
 - A quest group file no longer needs a `uid`: a group is identified by its file name and a quest by
   its `key`, so a file can be written by hand. A key is an identifier (the name players read is the title). To change one without losing progress, write `old_key`

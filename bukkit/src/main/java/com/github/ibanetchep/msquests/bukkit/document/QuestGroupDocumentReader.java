@@ -149,7 +149,7 @@ public final class QuestGroupDocumentReader {
             }
             quests.add(quest);
         }
-        checkOldKeys(questItems, quests);
+        checkOldKeys(questItems, quests, groupKey);
 
         try {
             return new QuestGroupConfigDTO(
@@ -197,8 +197,12 @@ public final class QuestGroupDocumentReader {
             String key = requiredString(quest, "key", path);
             String questUid = optionalString(quest, "uid", path);
             if (questUid != null) changes.add(new KeyChange.QuestUid(questUid, groupKey, key));
-            for (String old : oldKeys(quest, path)) {
-                if (!old.equals(key)) changes.add(new KeyChange.Quest(groupKey, old, key));
+            for (Former old : formers(quest, path, groupKey)) {
+                if (old.group() != null) {
+                    changes.add(new KeyChange.QuestMoved(old.group(), old.key(), groupKey, key));
+                } else if (!old.key().equals(key)) {
+                    changes.add(new KeyChange.Quest(groupKey, old.key(), key));
+                }
             }
         }
         return changes;
@@ -208,14 +212,17 @@ public final class QuestGroupDocumentReader {
      * A former key must lead to one quest: one that is still a quest's key would hand that
      * quest's rows over, and one claimed twice would give them to whichever comes first.
      */
-    private static void checkOldKeys(List<Object> questItems, List<QuestConfigDTO> quests) {
+    private static void checkOldKeys(List<Object> questItems, List<QuestConfigDTO> quests, String groupKey) {
         Set<String> keys = new HashSet<>();
         quests.forEach(quest -> keys.add(quest.key()));
         Map<String, String> claimed = new HashMap<>();
         for (int i = 0; i < questItems.size(); i++) {
             String path = "quests[" + i + "]";
             String key = quests.get(i).key();
-            for (String old : oldKeys(map(questItems.get(i), path), path)) {
+            for (Former former : formers(map(questItems.get(i), path), path, groupKey)) {
+                // A quest that came from another group: checked against that group once all are read.
+                if (former.group() != null) continue;
+                String old = former.key();
                 if (old.equals(key)) continue;
                 if (keys.contains(old)) {
                     throw new DocumentException(path + ".old_key", "'" + old + "' is still the key of a quest of this group:"
@@ -227,6 +234,58 @@ public final class QuestGroupDocumentReader {
                 }
             }
         }
+    }
+
+    /** Where a quest was before: its key, and its group when that was another one (else null). */
+    private record Former(@Nullable String group, String key) {
+    }
+
+    /**
+     * A quest's {@code old_key}: a former key, {@code {group, key}} for a quest that was in
+     * another group, or a list of either.
+     */
+    private static List<Former> formers(Map<String, Object> quest, String path, String groupKey) {
+        String fieldPath = path + ".old_key";
+        Object value = quest.get("old_key");
+        if (value == null) return List.of();
+        List<Object> items = value instanceof List<?> list ? new ArrayList<>(list) : List.of(value);
+        List<Former> formers = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            String itemPath = value instanceof List<?> ? fieldPath + "[" + i + "]" : fieldPath;
+            if (items.get(i) instanceof Map<?, ?>) {
+                Map<String, Object> place = map(items.get(i), itemPath);
+                String key = oldKey(place.get("key"), itemPath + ".key");
+                String group = oldKey(place.get("group"), itemPath + ".group");
+                formers.add(new Former(group.equals(groupKey) ? null : group, key));
+            } else {
+                formers.add(new Former(null, oldKey(items.get(i), itemPath)));
+            }
+        }
+        return formers;
+    }
+
+    /**
+     * The former keys of an objective lead to one objective of the quest, like a quest's in its
+     * group: the progress stored under one is read as the objective's own.
+     */
+    private static void checkObjectiveOldKeys(Map<String, List<String>> oldKeysByObjective, Set<String> objectiveKeys,
+                                              String path) {
+        Map<String, String> claimed = new HashMap<>();
+        oldKeysByObjective.forEach((key, olds) -> {
+            for (String old : olds) {
+                if (old.equals(key)) continue;
+                if (objectiveKeys.contains(old)) {
+                    throw new DocumentException(path, "objective '" + key + "': old_key '" + old
+                            + "' is still the key of an objective of this quest: remove it from old_key,"
+                            + " or '" + key + "' would start with the progress of '" + old + "'");
+                }
+                String other = claimed.putIfAbsent(old, key);
+                if (other != null) {
+                    throw new DocumentException(path, "objective '" + key + "': old_key '" + old
+                            + "' is already the old_key of '" + other + "'");
+                }
+            }
+        });
     }
 
     /** {@code old_key}: one former key, or a list of them. */
@@ -260,6 +319,7 @@ public final class QuestGroupDocumentReader {
 
         List<QuestStageConfigDTO> stages = new ArrayList<>();
         Set<String> objectiveKeys = new HashSet<>();
+        Map<String, List<String>> objectiveOldKeys = new LinkedHashMap<>();
         List<Object> stageItems = list(quest.get("stages"), path + ".stages");
         for (int s = 0; s < stageItems.size(); s++) {
             String stagePath = path + ".stages[" + s + "]";
@@ -284,6 +344,7 @@ public final class QuestGroupDocumentReader {
                     throw new DocumentException(objectivePath + ".key",
                             "objective key '" + objectiveKey + "' is already used in this quest");
                 }
+                objectiveOldKeys.put(objectiveKey, oldKeys(objective, objectivePath));
                 objectives.add(DocumentYaml.fromTree(objective, QuestObjectiveConfigDTO.class));
             }
 
@@ -293,6 +354,8 @@ public final class QuestGroupDocumentReader {
                     flow != null ? flow(flow, stagePath + ".flow") : null,
                     objectives));
         }
+
+        checkObjectiveOldKeys(objectiveOldKeys, objectiveKeys, path + ".stages");
 
         // `rewards` is the former name of actions.complete, still read.
         String questActionsKey = actionsKey(quest);

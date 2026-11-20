@@ -80,6 +80,19 @@ class KeyChangeSqlRepositoryTest {
     }
 
     @Test
+    void aQuestMovedToAnotherGroupKeepsItsRowsAndApplyingItAgainChangesNothing() {
+        UUID moved = row("story", "mine", null);
+        UUID stays = row("story", "fish", null);
+        List<KeyChange> list = List.of(new KeyChange.QuestMoved("story", "mine", "side", "dig"));
+
+        assertEquals(1, changes.apply(list).join());
+
+        assertEquals("side/dig", nameOf(moved));
+        assertEquals("story/fish", nameOf(stays));
+        assertEquals(0, changes.apply(list).join());
+    }
+
+    @Test
     void aGroupWhoseKeyChangedTakesItsQuestsAndRotationsAndAQuestIsFoundUnderIt() {
         UUID quest = row("daily", "mine", null);
         UUID untouched = row("daily", "fish", null);
