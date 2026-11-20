@@ -770,6 +770,38 @@ reuses the key, and a reset added to a group that had none. The editor writes an
 `old_key` when its key changes (`objectiveOut` in `editor/src/model.ts`). The editor's
 preview follows the same rules (`editor/src/sourceRows.ts`, vectors in `testdata/sources/`).
 
+
+#### What a change does, said before it is published
+
+The rules above are applied silently at the next load. `core/impact` reads them ahead, so the
+author is told before publishing: `ContentImpact.of(before, after, key changes, claimed places,
+ImpactSource)` compares the group the server loaded with the one about to be published and
+returns `Impact`s, each a loss (actors lose something they had) or a notice (they move on, or
+content added behind them is not asked of them), with how many quests in progress it touches.
+`ImpactSource` counts (`QuestImpactSqlSource`: three grouped reads of `artisan_quests_quest`
+and `artisan_quests_objective`), `ImpactMessages` holds the sentence of each code in English
+and French.
+
+| Code | Loss | Said when |
+|---|---|---|
+| `group.removed` | yes | the file is deleted and no other group names it in `old_key` |
+| `quest.removed`, `quest.replaced` | yes when in progress | a quest key is gone and nothing claims it; `replaced` when exactly one quest is gone and one is new (a key changed by hand: the sentence says to write `old_key`) |
+| `objective.replaced`, `objective.type_changed` | yes | an objective key gone and a new one of the same type on the same stage, or a type changed under the same key |
+| `group.renamed`, `quest.renamed`, `quest.moved` | no | `old_key` moves the progress (once per database) |
+| `objective.target_raised`, `objective.target_lowered`, `objective.added`, `objective.removed` | no | who has more to do, who completes at the next load |
+| `stage.added`, `stage.removed`, `stage.removed_last` | no | who is past it, who moves on or completes the quest |
+| `group.reset_added` | no | a reset on a group that had none: earlier completions stop counting |
+
+`QuestGroupChangeCheck` (`bukkit/document`) wraps it for a `quest_group` Document: the file the
+reader refuses is a problem, the rest are the impacts in the author's language. It is free of
+Artisan's types; the module hands it to `DocumentChangeCheck` (Artisan API 1.9.0, the Deploy
+review) once that API is published. One test per code in `ContentImpactTest`.
+
+In the editor, changing the key of a quest the file already has asks what becomes of the
+progress (`undecidedKey`, `chooseKeyChange` in `editor/src/model.ts`): keep it (`old_key` is
+written) or start from zero (the quest counts as new). Unanswered, the file is written as
+"keep": nothing is lost by omission.
+
 ### Imports from other quest plugins
 
 `MsQuestsArtisanModule` registers the source `msquests:beautyquests` with Artisan's import contract

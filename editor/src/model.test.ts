@@ -4,7 +4,9 @@ import {
   type QuestGroup,
   freeKey,
   joinChain,
+  chooseKeyChange,
   keepOldKey,
+  undecidedKey,
   legacyLabel,
   newObjectiveKey,
   newUid,
@@ -243,6 +245,32 @@ describe("identity", () => {
     quest.key = "mine";
     keepOldKey(quest, "dig");
     expect(written(group)[0]!.old_key).toBe("dig");
+  });
+
+  it("asks what becomes of the progress when the key of a saved quest changes, and writes the answer", () => {
+    const group = parse(handWritten);
+    const quest = group.quests[0]!;
+    expect(undecidedKey(quest)).toBeNull();
+
+    quest.key = "dig";
+    expect(undecidedKey(quest)).toBe("mine");
+    expect(written(group)[0]!.old_key).toBe("mine"); // unanswered: nothing is lost by omission
+
+    chooseKeyChange(quest, "keep");
+    expect(undecidedKey(quest)).toBeNull();
+    expect(written(group)[0]!.old_key).toBe("mine");
+
+    chooseKeyChange(quest, "reset");
+    expect(undecidedKey(quest)).toBeNull();
+    expect("old_key" in written(group)[0]!).toBe(false);
+    quest.key = "excavate";
+    expect(undecidedKey(quest)).toBeNull(); // a new quest now: no progress to ask about
+    expect("old_key" in written(group)[0]!).toBe(false);
+  });
+
+  it("does not ask again about a key the file already names in old_key", () => {
+    const group = parse({ ...handWritten, quests: [{ key: "dig", old_key: "mine", title: "Dig" }] });
+    expect(undecidedKey(group.quests[0]!)).toBeNull();
   });
 
   it("writes old_key on an objective of the file whose key changes, and keeps the ones written by hand", () => {

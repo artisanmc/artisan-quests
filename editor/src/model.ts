@@ -62,6 +62,13 @@ export interface Quest {
   savedKey?: string;
   /** `old_key`: the keys this quest had, whose progress the server moves onto `key`. */
   oldKeys: string[];
+  /**
+   * What the author answered when the key of a saved quest changed: `keep` (the progress follows,
+   * `old_key` is written) or `reset` (a new quest, the progress under the old key is left).
+   * Unset: not answered yet; the file is then written as `keep`, so nothing is lost by omission.
+   * In memory only.
+   */
+  keyChoice?: "keep" | "reset";
   /** The `{group, key}` entries of `old_key` (a quest that came from another group), kept as written. */
   oldPlaces: Raw[];
   tier: string;
@@ -357,6 +364,34 @@ export function oldKeysOf(quest: Quest, groupKeys: ReadonlySet<string>): string[
     out.push(key);
   }
   return out;
+}
+
+/**
+ * The key a saved quest left without its author saying what becomes of the progress stored
+ * under it, or null: the view asks ({@link chooseKeyChange}).
+ */
+export function undecidedKey(quest: Quest): string | null {
+  const saved = quest.savedKey;
+  if (saved === undefined || saved === "" || saved === quest.key) return null;
+  if (quest.keyChoice !== undefined || quest.oldKeys.includes(saved)) return null;
+  return saved;
+}
+
+/**
+ * The author's answer to a changed key. `keep`: the key the quest had is written in `old_key`.
+ * `reset`: every former key is dropped and the quest counts as new under its key.
+ */
+export function chooseKeyChange(quest: Quest, choice: "keep" | "reset"): void {
+  if (choice === "keep") {
+    if (quest.savedKey !== undefined) keepOldKey(quest, quest.savedKey);
+    quest.keyChoice = "keep";
+    return;
+  }
+  quest.oldKeys = [];
+  quest.oldPlaces = [];
+  // As a quest added since the file was read: no progress to move, nothing more to ask.
+  quest.savedKey = undefined;
+  quest.keyChoice = "reset";
 }
 
 function oldKeyField(quest: Quest, groupKeys: ReadonlySet<string>): unknown {

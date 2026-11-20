@@ -57,6 +57,7 @@ export const QUESTS_CSS = `
 .aq-reset > * { flex: 0 1 160px; }
 .aq-ok { color: var(--success); font-size: 12px; }
 .aq-err { color: var(--danger); font-size: 12px; }
+.aq-keychange { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
 .aq-forget { padding: 0; border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; text-decoration: underline; }
 .aq-warn { color: var(--warning); font-size: 12px; }
 .aq-check { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; }

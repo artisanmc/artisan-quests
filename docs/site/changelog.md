@@ -7,6 +7,9 @@ sidebar:
 
 ## Unreleased
 
+- Changing a quest's key in the editor now asks what becomes of the players' progress: keep it or
+  start from zero. Until you answer, it is kept.
+
 - Changing a quest that players have started no longer sends them back or blocks them: an objective
   completed once stays completed when its target is raised, a stage or an objective added behind a
   player is not asked of them, and a quest left with nothing to do (a lowered target, a removed

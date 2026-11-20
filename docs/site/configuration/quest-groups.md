@@ -113,8 +113,9 @@ quests:
 
 When the file loads, the server moves the saved progress from the old key to the new one,
 before any player's quests are read. This is done once per database: loading the file again,
-on this server or another, moves nothing more, so `old_key` can stay. The editor writes it
-when you change a quest's key.
+on this server or another, moves nothing more, so `old_key` can stay. When you change a
+quest's key in the editor, it asks what becomes of the players' progress: keep it (it writes
+`old_key`) or start from zero (the quest counts as new).
 
 On a network, publish the file on every server that runs the group. A server that still
 loads the old key no longer finds the players' progress and starts the quest again for
