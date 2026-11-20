@@ -106,8 +106,12 @@ class ContentMigrationTest {
         assertTrue(Files.readString(project().resolve("manifest.yaml")).contains("default_lang: fr"));
 
         QuestDTO stored = new ArtisanQuestSqlRepository(db).getAllByActor(player).join().get(stoneQuest);
-        QuestConfigDTO config = daily.quests().stream().filter(q -> q.uid().equals(stored.questUid())).findFirst().orElseThrow();
-        assertEquals("mine_stone_64", config.key());
+        // The copied row names its quest by its keys, and carries no uid.
+        assertEquals("daily", stored.groupKey());
+        assertEquals("mine_stone_64", stored.questKey());
+        assertEquals("", stored.questUid());
+        assertNotNull(daily.getQuest("mine_stone_64"));
+        assertEquals(java.util.List.of(), documents.renames());
         assertEquals(37, stored.objectives().get("obj_1").progress());
         assertEquals("stage_1", stored.objectives().get("obj_1").stageKey());
 

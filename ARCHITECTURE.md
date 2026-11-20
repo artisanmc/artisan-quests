@@ -679,8 +679,9 @@ over next to progress it cannot find.
 `uid` is what identified groups and quests before: optional now, and read as one more former
 name, so a server whose rows were keyed by uid moves them onto the keys at its first load,
 with no step to run. The editor no longer writes one (it keeps those a file has) and writes
-`old_key` when a quest's key changes. `/msquests migrate` and the BeautyQuests import still
-write uids, which load like any older Document.
+`old_key` when a quest's key changes. `/msquests migrate` writes none either, and
+`LegacyDataCopier` copies the rows under their keys. The BeautyQuests import still writes
+uids (derived from the BeautyQuests id), which load like any older Document.
 
 The reader refuses a Document whose `old_key` is still the key of a quest of the group (or,
 for a group, of a group of the server), or is claimed twice: the rows would go to the wrong
@@ -697,8 +698,10 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
    `migration/report-<date>.txt`. Nothing else is written.
 2. `/msquests migrate --confirm`: writes the missing Documents into the `quests` module folder
    (`plugins/Artisan/modules/quests/`, created if missing; never over
-   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (`(group, key) -> uid`, `objective -> stage`). Re-run,
-   it keeps the same `uid`s.
+   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (the groups and quests converted, `objective -> stage`).
+   The Documents carry no `uid`; a `uid` an earlier version of the migration wrote (in the map or in
+   a Document) is kept and copied along, so that run still matches. Re-run, it finds a Document
+   renamed since by its `old_key`.
 3. `content_source: artisan` then restart: before any loading, `LegacyDataCopier`
    copies `msquests_*` into `artisan_quests_*` in one transaction (counts verified, otherwise
    rollback), only once. Without `map.yaml` while `msquests_quest` has rows, the

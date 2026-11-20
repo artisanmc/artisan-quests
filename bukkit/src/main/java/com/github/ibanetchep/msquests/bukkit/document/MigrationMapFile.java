@@ -27,9 +27,9 @@ import java.util.Map;
  */
 public final class MigrationMapFile {
 
-    private static final String HEADER = "# Written by /msquests migrate: the uid of each group and quest of quests/*.yml,\n"
-            + "# and the stage of each objective. Read to copy the saved progress into artisan_quests_*,\n"
-            + "# and by a later run of the migration to keep the same uids. Do not edit.\n";
+    private static final String HEADER = "# Written by /msquests migrate: the groups and quests of quests/*.yml that were converted,\n"
+            + "# and the stage of each objective. Read to copy the saved progress into artisan_quests_*.\n"
+            + "# A uid, when there is one, was given by an earlier version and is kept. Do not edit.\n";
 
     private MigrationMapFile() {
     }
@@ -62,12 +62,12 @@ public final class MigrationMapFile {
             Map<String, Object> quests = new LinkedHashMap<>();
             group.getValue().quests().forEach((key, quest) -> {
                 Map<String, Object> questTree = new LinkedHashMap<>();
-                questTree.put("uid", quest.uid());
+                if (quest.uid() != null) questTree.put("uid", quest.uid());
                 questTree.put("objectives", new LinkedHashMap<>(quest.objectiveStages()));
                 quests.put(key, questTree);
             });
             Map<String, Object> groupTree = new LinkedHashMap<>();
-            groupTree.put("uid", group.getValue().uid());
+            if (group.getValue().uid() != null) groupTree.put("uid", group.getValue().uid());
             groupTree.put("quests", quests);
             groups.put(group.getKey(), groupTree);
         }
@@ -75,10 +75,9 @@ public final class MigrationMapFile {
         LegacyContentConverter.writeAtomically(file, HEADER + DocumentYaml.write(Map.of("groups", groups)), tmpDir);
     }
 
-    private static String uid(Map<String, Object> tree, String path) {
+    private static @Nullable String uid(Map<String, Object> tree, String path) {
         Object uid = tree.get("uid");
-        if (uid == null || uid.toString().isBlank()) throw new DocumentException(path + ".uid", "is required");
-        return uid.toString();
+        return uid == null || uid.toString().isBlank() ? null : uid.toString();
     }
 
     @SuppressWarnings("unchecked")

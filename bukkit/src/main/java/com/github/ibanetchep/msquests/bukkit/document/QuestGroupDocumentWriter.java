@@ -27,19 +27,19 @@ public final class QuestGroupDocumentWriter {
     }
 
     /**
-     * @param groupUid  the group's uid
-     * @param questUid  uid of each quest, by quest key
+     * @param groupUid  the uid an earlier conversion gave the group, written back; null: none
+     * @param questUid  the uid an earlier conversion gave a quest, by quest key; null: none
      * @param stagesOf  the stages to write for a quest: its own, or a copy whose objective keys
      *                  were made unique within the quest
      * @param timezone  zone the reset cron is read in; the server's, which is what it was read in so far
      */
-    public static Map<String, Object> write(QuestGroupConfigDTO group, String groupUid,
+    public static Map<String, Object> write(QuestGroupConfigDTO group, @Nullable String groupUid,
                                             Function<String, String> questUid,
                                             Function<QuestConfigDTO, List<QuestStageConfigDTO>> stagesOf,
                                             String lang, @Nullable String timezone) {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("schema", QuestGroupDocumentReader.SCHEMA);
-        doc.put("uid", groupUid);
+        putIfSet(doc, "uid", groupUid);
         doc.put("title", Ltext.of(group.name(), lang));
         doc.put("description", Ltext.of(group.description(), lang));
         if (group.actorType() != null) doc.put("actor_type", group.actorType().toLowerCase(Locale.ROOT));
@@ -104,10 +104,10 @@ public final class QuestGroupDocumentWriter {
         return on;
     }
 
-    private static Map<String, Object> quest(QuestConfigDTO quest, String uid, List<QuestStageConfigDTO> stages, String lang) {
+    private static Map<String, Object> quest(QuestConfigDTO quest, @Nullable String uid, List<QuestStageConfigDTO> stages, String lang) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("key", quest.key());
-        out.put("uid", uid);
+        putIfSet(out, "uid", uid);
         putIfSet(out, "tier", quest.tier());
         putIfSet(out, "title", Ltext.of(quest.name(), lang));
         putIfSet(out, "description", Ltext.of(quest.description(), lang));

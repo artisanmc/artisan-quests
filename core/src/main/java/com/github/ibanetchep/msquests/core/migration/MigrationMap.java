@@ -7,10 +7,11 @@ import java.util.Map;
 
 /**
  * What the conversion of {@code quests/*.yml} to {@code quest_group} Documents decided, written
- * to {@code migration/map.yaml}: the uid given to each group and quest, and the stage each
- * objective key belongs to. The copy of {@code msquests_*} into {@code artisan_quests_*} reads it
- * to turn the stored {@code (group_key, quest_key)} and {@code objective_key} into
- * {@code quest_uid} and {@code stage_key}; a later conversion reads it to keep the same uids.
+ * to {@code migration/map.yaml}: the groups and quests converted, and the stage each objective
+ * key belongs to. The copy of {@code msquests_*} into {@code artisan_quests_*} reads it to know
+ * which rows still have a quest and to give each objective row its {@code stage_key}. A
+ * {@code uid} is only there when a conversion made before keys became the identity gave one:
+ * it is kept, and recorded on the copied rows, so the Documents that carry it still match.
  */
 public record MigrationMap(Map<String, Group> groups) {
 
@@ -23,14 +24,14 @@ public record MigrationMap(Map<String, Group> groups) {
     }
 
     /** @param quests by quest key, in group order */
-    public record Group(String uid, Map<String, Quest> quests) {
+    public record Group(@Nullable String uid, Map<String, Quest> quests) {
         public Group {
             quests = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(quests));
         }
     }
 
     /** @param objectiveStages objective key → key of the stage holding it */
-    public record Quest(String uid, Map<String, String> objectiveStages) {
+    public record Quest(@Nullable String uid, Map<String, String> objectiveStages) {
         public Quest {
             objectiveStages = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(objectiveStages));
         }
