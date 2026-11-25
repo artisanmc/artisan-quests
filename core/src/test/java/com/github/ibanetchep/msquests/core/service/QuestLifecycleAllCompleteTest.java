@@ -338,4 +338,18 @@ class QuestLifecycleAllCompleteTest {
         org.junit.jupiter.api.Assertions.assertEquals(QuestStatus.COMPLETED, quest.getStatus());
         verify(persistenceService, never()).saveQuest(any());
     }
+
+    @Test
+    void completingAQuestRecordsWhenItEnded() {
+        QuestGroupConfig groupConfig = buildGroupConfig(ActionChain.EMPTY);
+        Quest quest = buildQuestWithSingleObjective(new TestActor(), groupConfig, "quest1", QuestObjectiveStatus.IN_PROGRESS);
+        wireExecutor(quest);
+        long before = System.currentTimeMillis();
+
+        lifecycleService.completeQuest(quest);
+
+        org.junit.jupiter.api.Assertions.assertEquals(QuestStatus.COMPLETED, quest.getStatus());
+        org.junit.jupiter.api.Assertions.assertNotNull(quest.getCompletedAt());
+        org.junit.jupiter.api.Assertions.assertTrue(quest.getCompletedAt().getTime() >= before);
+    }
 }

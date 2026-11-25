@@ -243,7 +243,7 @@ public class BukkitQuestsPlugin extends JavaPlugin implements MSQuestsPlatform {
         registerCommands();
         registerExpansions();
 
-        cronDistributionService = new CronDistributionService(questConfigRegistry, questActorRegistry, questLifecycleService);
+        cronDistributionService = new CronDistributionService(questConfigRegistry, questActorRegistry, questLifecycleService, questService);
 
         getScheduler().runTimer(questProgressService::flushPendingProgress, 1, 1, TimeUnit.SECONDS);
         getScheduler().runTimer(this::refreshActors, 1, 1, TimeUnit.MINUTES);

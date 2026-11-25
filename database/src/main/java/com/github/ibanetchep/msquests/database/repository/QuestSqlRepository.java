@@ -7,7 +7,10 @@ import com.github.ibanetchep.msquests.core.quest.objective.QuestObjectiveStatus;
 import com.github.ibanetchep.msquests.core.repository.QuestRepository;
 import com.github.ibanetchep.msquests.database.DbAccess;
 
+import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
+
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -168,4 +171,18 @@ public class QuestSqlRepository extends SqlRepository implements QuestRepository
         }));
     }
 
+
+    @Override
+    public CompletableFuture<Integer> expireInProgress(QuestGroupConfig group, Instant createdBefore) {
+        return supplyAsync(() -> getJdbi().withHandle(handle -> handle.createUpdate("""
+                        UPDATE msquests_quest
+                        SET quest_status = :expired, updated_at = :now
+                        WHERE quest_status = :inProgress AND created_at < :before AND quest_group_key = :group""")
+                .bind("expired", QuestStatus.EXPIRED.toString())
+                .bind("inProgress", QuestStatus.IN_PROGRESS.toString())
+                .bind("now", new Timestamp(System.currentTimeMillis()))
+                .bind("before", Timestamp.from(createdBefore))
+                .bind("group", group.getKey())
+                .execute()));
+    }
 }

@@ -19,6 +19,7 @@ import net.artisanmc.modules.api.stats.StatStorage;
 import net.artisanmc.modules.api.stats.StatsApi;
 import org.jetbrains.annotations.Nullable;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -89,7 +90,7 @@ public final class QuestStats implements Consumer<CoreEvent> {
             QuestGroupConfig group = configs.getQuestGroupConfigs().get(params.getOrDefault("group", ""));
             if (group == null) return List.of();
             Map<String, String> keys = keysByUid(group);
-            return QuestFigures.progress(source.quests(keys.keySet()), keys::get);
+            return QuestFigures.progress(source.quests(keys.keySet()), keys::get, lapsed(group));
         });
         stats.declareQuery(STUCK, CACHE_SECONDS, params -> {
             QuestGroupConfig group = configs.getQuestGroupConfigs().get(params.getOrDefault("group", ""));
@@ -101,8 +102,14 @@ public final class QuestStats implements Consumer<CoreEvent> {
                 stages.put(quest.getUid(), quest.getStages().values().stream().map(QuestStageConfig::getKey).toList());
             }
             return QuestFigures.stuck(source.stages(keys.keySet()), keys::get,
-                    uid -> stages.getOrDefault(uid, List.of()), clock.getAsLong());
+                    uid -> stages.getOrDefault(uid, List.of()), lapsed(group), clock.getAsLong());
         });
+    }
+
+    /** A quest of {@code group} is over once a reset passed since it started, or the group ended. */
+    private QuestFigures.Lapsed lapsed(QuestGroupConfig group) {
+        Instant now = Instant.ofEpochMilli(clock.getAsLong());
+        return (uid, createdAt) -> group.hasLapsed(Instant.ofEpochMilli(createdAt), now);
     }
 
     private static Map<String, String> keysByUid(QuestGroupConfig group) {
