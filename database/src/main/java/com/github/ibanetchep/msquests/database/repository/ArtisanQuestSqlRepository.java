@@ -7,7 +7,13 @@ import com.github.ibanetchep.msquests.core.quest.objective.QuestObjectiveStatus;
 import com.github.ibanetchep.msquests.core.repository.QuestRepository;
 import com.github.ibanetchep.msquests.database.DbAccess;
 
+import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
+import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
+
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -184,5 +190,24 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                 }
             });
         });
+    }
+
+    @Override
+    public CompletableFuture<Integer> expireInProgress(QuestGroupConfig group, Instant createdBefore) {
+        List<String> uids = group.getOrderedQuests().stream()
+                .map(QuestConfig::getUid)
+                .filter(Objects::nonNull)
+                .toList();
+        if (uids.isEmpty()) return CompletableFuture.completedFuture(0);
+        return supplyAsync(() -> getJdbi().withHandle(handle -> handle.createUpdate("""
+                        UPDATE artisan_quests_quest
+                        SET quest_status = :expired, updated_at = :now
+                        WHERE quest_status = :inProgress AND created_at < :before AND quest_uid IN (<uids>)""")
+                .bind("expired", QuestStatus.EXPIRED.toString())
+                .bind("inProgress", QuestStatus.IN_PROGRESS.toString())
+                .bind("now", new Timestamp(System.currentTimeMillis()))
+                .bind("before", Timestamp.from(createdBefore))
+                .bindList("uids", uids)
+                .execute()));
     }
 }

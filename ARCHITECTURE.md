@@ -251,11 +251,11 @@ with `content_source: artisan`, from the quest tables (`QuestFiguresSqlSource` r
   median and the longest time on it. A quest stands on the first stage, in the Document's order,
   that still has an objective to complete.
 
-**A row still `IN_PROGRESS` is not always in progress.** A quest expires (status `EXPIRED`) when
-its actor loads, at a period reset for the actors online, or on join: the rows of a player who
-never came back keep `IN_PROGRESS` for good. Both figures ask the group whether such a row has
-lapsed (`QuestGroupConfig.hasLapsed`: a reset since it was created, or the group ended, the same
-rule as `Quest.shouldExpire`): `quests:progress` counts it as expired, `quests:stuck` leaves it out.
+**A row still `IN_PROGRESS` is not always in progress.** Expiry in storage only happens at a reset
+the server saw (step 7 of the lifecycle), and a group's end or a quest's own duration still expire on
+load only. Both figures ask the group whether a row has lapsed (`QuestGroupConfig.hasLapsed`: a reset
+since it was created, or the group ended, the same rule as `Quest.shouldExpire`): `quests:progress`
+counts it as expired, `quests:stuck` leaves it out.
 
 **Quest times** come from `artisan_quests_quest.completed_at`, set when a quest completes
 (`QuestLifecycleService`). Quests completed before this version have none and stay out of the median.
@@ -431,6 +431,11 @@ QuestConfig         Quest              QuestStage           QuestObjective
 5. **Stage completion**: When all the stage's objectives are completed, the next stage activates
 6. **Quest completion**: When the last stage is completed, the reward actions run
 7. **Expiration**: `QuestLifecycleService.expireQuests()` checks `shouldExpire()` (duration or cron)
+   when an actor loads. At each reset of a group with a reset cron, `CronDistributionService` expires
+   its quests in memory for the loaded actors and in storage for all the others
+   (`QuestRepository.expireInProgress`: IN_PROGRESS rows created before the reset); its first tick
+   catches up on the last reset. A quest expired in storage records no `quests:expired` event (its
+   actor is not loaded, nobody to record it for).
 8. **Rotation**: `rotateQuest()` replaces an active quest with another candidate of the same group
 
 ### Actor types

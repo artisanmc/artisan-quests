@@ -212,6 +212,18 @@ public class QuestService {
                 && (periodEnd == null || createdAt.isBefore(periodEnd));
     }
 
+    /**
+     * Expires in storage every quest of {@code group} still in progress that was created before
+     * {@code createdBefore}: those of the actors not loaded, which nothing else would expire
+     * until they come back. Loaded actors are expired in memory by the caller.
+     */
+    public CompletableFuture<Integer> expireInProgress(QuestGroupConfig group, Instant createdBefore) {
+        return questRepository.expireInProgress(group, createdBefore).exceptionally(e -> {
+            logger.log(Level.SEVERE, "Failed to expire the quests of group " + group.getKey(), e);
+            return 0;
+        });
+    }
+
     public CompletableFuture<Void> deleteQuest(Quest quest) {
         return questRepository.delete(quest.getId()).exceptionally(e -> {
             logger.log(Level.SEVERE, "Failed to delete quest", e);
