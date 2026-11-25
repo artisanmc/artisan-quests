@@ -29,7 +29,7 @@ class QuestFiguresTest {
                 new QuestRow("u1", "FAILED", 0, null),
                 new QuestRow("u2", "EXPIRED", 0, null),
                 new QuestRow("gone", "COMPLETED", 0, 1L)
-        ), uid -> uid.equals("gone") ? null : "quest_" + uid);
+        ), uid -> uid.equals("gone") ? null : "quest_" + uid, QuestFigures.Lapsed.NEVER);
 
         assertEquals(2, rows.size());
         Map<String, Object> first = rows.get(0);
@@ -59,7 +59,7 @@ class QuestFiguresTest {
                 // d: a stage completed before its time was recorded counts from the quest's start
                 new StageRow("d", "u2", 500_000, "one", 0, null),
                 new StageRow("d", "u2", 500_000, "two", 3, null)
-        ), uid -> "quest_" + uid, uid -> List.of("one", "two"), now);
+        ), uid -> "quest_" + uid, uid -> List.of("one", "two"), QuestFigures.Lapsed.NEVER, now);
 
         assertEquals(3, rows.size());
         Map<String, Object> two = rows.stream().filter(r -> r.get("quest").equals("quest_u1") && r.get("stage").equals("two")).findFirst().orElseThrow();
@@ -71,5 +71,36 @@ class QuestFiguresTest {
         assertEquals(900.0, one.get("median_seconds"));
         Map<String, Object> other = rows.stream().filter(r -> r.get("quest").equals("quest_u2")).findFirst().orElseThrow();
         assertEquals(500.0, other.get("median_seconds"));
+    }
+
+    @Test
+    void aQuestInProgressWhosePeriodWasResetCountsAsExpired() {
+        // Rows created before 1 000 belong to a past period: their actor never came back to expire them.
+        QuestFigures.Lapsed lapsed = (uid, createdAt) -> createdAt < 1_000;
+        List<Map<String, Object>> rows = QuestFigures.progress(List.of(
+                new QuestRow("u1", "IN_PROGRESS", 0, null),
+                new QuestRow("u1", "IN_PROGRESS", 500, null),
+                new QuestRow("u1", "IN_PROGRESS", 2_000, null),
+                new QuestRow("u1", "COMPLETED", 0, 600L)
+        ), uid -> "quest_" + uid, lapsed);
+
+        Map<String, Object> row = rows.get(0);
+        assertEquals(4, row.get("started"));
+        assertEquals(1, row.get("in_progress"));
+        assertEquals(2, row.get("expired"));
+        assertEquals(1, row.get("completed"));
+    }
+
+    @Test
+    void aLapsedQuestStandsOnNoStage() {
+        QuestFigures.Lapsed lapsed = (uid, createdAt) -> createdAt < 1_000;
+        List<Map<String, Object>> rows = QuestFigures.stuck(List.of(
+                new StageRow("old", "u1", 0, "one", 1, null),
+                new StageRow("new", "u1", 5_000, "one", 1, null)
+        ), uid -> "quest_" + uid, uid -> List.of("one"), lapsed, 65_000);
+
+        assertEquals(1, rows.size());
+        assertEquals(1, rows.get(0).get("players"));
+        assertEquals(60L, rows.get(0).get("longest_seconds"));
     }
 }

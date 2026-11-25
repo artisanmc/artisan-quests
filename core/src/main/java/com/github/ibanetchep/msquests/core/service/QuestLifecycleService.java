@@ -27,6 +27,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -159,6 +160,7 @@ public class QuestLifecycleService {
         var questCompleteEvent = new CoreQuestCompletedEvent(quest);
         dispatcher.dispatch(questCompleteEvent);
         quest.setStatus(QuestStatus.COMPLETED);
+        quest.setCompletedAt(new Date());
 
         QuestGroupConfig groupConfig = quest.getQuestGroup();
 

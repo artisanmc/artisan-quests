@@ -274,6 +274,17 @@ public class QuestGroupConfig implements PlaceholderProvider {
         return window != null ? window.previous() : null;
     }
 
+    /**
+     * Whether a quest of this group created at {@code createdAt} is over at {@code now}: the
+     * group ended, or a reset came after its creation. Such a quest expires the next time its
+     * actor loads; until then its row still says IN_PROGRESS.
+     */
+    public boolean hasLapsed(Instant createdAt, Instant now) {
+        if (endAt != null && now.isAfter(endAt)) return true;
+        Instant expiration = getNextResetAfter(createdAt);
+        return expiration != null && now.isAfter(expiration);
+    }
+
     /** The first reset strictly after {@code from}, {@code null} without a reset cron. */
     public @Nullable Instant getNextResetAfter(Instant from) {
         return resetSchedule != null ? CronUtils.getNextExecution(resetSchedule, from, getResetZone()) : null;

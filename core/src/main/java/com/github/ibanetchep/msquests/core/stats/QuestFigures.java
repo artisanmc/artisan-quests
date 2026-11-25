@@ -39,12 +39,29 @@ public final class QuestFigures {
     }
 
     /**
+     * Whether a quest row still IN_PROGRESS is in fact over: its period was reset, or its group
+     * ended. Expiry is written when the actor loads, so the rows of players who left keep
+     * IN_PROGRESS for good; the figures count them as expired.
+     */
+    @FunctionalInterface
+    public interface Lapsed {
+        Lapsed NEVER = (questUid, createdAt) -> false;
+
+        boolean test(String questUid, long createdAt);
+    }
+
+    /**
      * Per quest: how many were started, are in progress, completed, expired or abandoned, and the
-     * median time from start to completion. A quest nobody started gets no row.
+     * median time from start to completion. A quest nobody started gets no row. A row in progress
+     * that {@code lapsed} says is over counts as expired.
      *
      * @param keyOf the key a quest's uid has in the loaded configuration; null leaves the quest out
      */
-    public static List<Map<String, Object>> progress(Collection<QuestRow> rows, Function<String, @Nullable String> keyOf) {
+    public static List<Map<String, Object>> progress(
+            Collection<QuestRow> rows,
+            Function<String, @Nullable String> keyOf,
+            Lapsed lapsed
+    ) {
         Map<String, int[]> counts = new LinkedHashMap<>();
         Map<String, List<Long>> durations = new LinkedHashMap<>();
         for (QuestRow row : rows) {
@@ -53,7 +70,10 @@ public final class QuestFigures {
             int[] count = counts.computeIfAbsent(key, k -> new int[5]);
             count[0]++;
             switch (row.status()) {
-                case "IN_PROGRESS" -> count[1]++;
+                case "IN_PROGRESS" -> {
+                    if (lapsed.test(row.questUid(), row.createdAt())) count[3]++;
+                    else count[1]++;
+                }
                 case "COMPLETED" -> {
                     count[2]++;
                     if (row.completedAt() != null && row.completedAt() >= row.createdAt()) {
@@ -86,7 +106,8 @@ public final class QuestFigures {
      * Per quest and stage: how many quests in progress stand on that stage, and for how long
      * (median and longest, in seconds). A quest stands on the first stage, in the configured
      * order, that still has an objective to complete; it entered it when the last objective of
-     * the stages before ended, or when it started.
+     * the stages before ended, or when it started. A quest that {@code lapsed} says is over is
+     * left out: nobody stands on it any more.
      *
      * @param keyOf the key a quest's uid has in the loaded configuration; null leaves the quest out
      * @param stagesOf the stage keys of a quest's uid, in order
@@ -96,6 +117,7 @@ public final class QuestFigures {
             Collection<StageRow> rows,
             Function<String, @Nullable String> keyOf,
             Function<String, List<String>> stagesOf,
+            Lapsed lapsed,
             long now
     ) {
         Map<String, List<StageRow>> byQuest = new LinkedHashMap<>();
@@ -105,7 +127,7 @@ public final class QuestFigures {
         for (List<StageRow> stages : byQuest.values()) {
             StageRow first = stages.get(0);
             String key = keyOf.apply(first.questUid());
-            if (key == null) continue;
+            if (key == null || lapsed.test(first.questUid(), first.createdAt())) continue;
             long entered = first.createdAt();
             for (String stageKey : stagesOf.apply(first.questUid())) {
                 StageRow stage = stages.stream().filter(s -> s.stageKey().equals(stageKey)).findFirst().orElse(null);

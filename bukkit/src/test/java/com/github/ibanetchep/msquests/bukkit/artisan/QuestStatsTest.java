@@ -172,4 +172,35 @@ class QuestStatsTest {
         assertTrue(api.queries.get(QuestStats.PROGRESS).rows(Map.of("group", "none")).isEmpty());
         assertTrue(api.queries.get(QuestStats.STUCK).rows(Map.of()).isEmpty());
     }
+
+    @Test
+    void aDailyQuestLeftInProgressBeforeTheLastResetIsNotInProgress() throws Exception {
+        QuestGroupConfig group = new QuestGroupConfig.Builder("daily", "Daily", "", "player")
+                .resetCron("0 0 * * *")
+                .build();
+        QuestConfig quest = ArtisanFixtures.quest(group, "dig", "easy");
+        String uid = "01HQUESTDIG";
+        quest.setUid(uid);
+        QuestConfigRegistry configs = new QuestConfigRegistry();
+        configs.registerQuestGroupConfig(group);
+        long now = 90_000L - 1_000L; // a second before the stats clock: after the last midnight in any zone
+        long longAgo = now - java.time.Duration.ofDays(2).toMillis();
+        String stage = quest.getStages().keySet().iterator().next();
+        stats.declareQueries(configs, new QuestFiguresSource() {
+            @Override
+            public List<QuestRow> quests(Collection<String> questUids) {
+                return List.of(new QuestRow(uid, "IN_PROGRESS", longAgo, null), new QuestRow(uid, "IN_PROGRESS", now, null));
+            }
+
+            @Override
+            public List<StageRow> stages(Collection<String> questUids) {
+                return List.of(new StageRow("old", uid, longAgo, stage, 1, null), new StageRow("new", uid, now, stage, 1, null));
+            }
+        });
+
+        Map<String, Object> progress = api.queries.get(QuestStats.PROGRESS).rows(Map.of("group", "daily")).get(0);
+        assertEquals(1, progress.get("in_progress"));
+        assertEquals(1, progress.get("expired"));
+        assertEquals(1, api.queries.get(QuestStats.STUCK).rows(Map.of("group", "daily")).get(0).get("players"));
+    }
 }

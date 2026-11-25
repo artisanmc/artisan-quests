@@ -150,20 +150,7 @@ public class Quest implements PlaceholderProvider {
             return false;
         }
 
-        Instant createdAtInstant = getCreatedAt().toInstant();
-        Instant now = Instant.now();
-
-        Instant endAt = group.getEndAt();
-        if (endAt != null && now.isAfter(endAt)) {
-            return true;
-        }
-
-        Instant expiration = group.getNextResetAfter(createdAtInstant);
-        if (expiration != null) {
-            return now.isAfter(expiration);
-        }
-
-        return false;
+        return group.hasLapsed(getCreatedAt().toInstant(), Instant.now());
     }
 
     public boolean shouldComplete() {
