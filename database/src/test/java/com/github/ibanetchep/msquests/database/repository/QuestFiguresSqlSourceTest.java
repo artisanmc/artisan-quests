@@ -103,6 +103,25 @@ class QuestFiguresSqlSourceTest {
         assertTrue(source.stages(List.of("u1")).isEmpty());
     }
 
+    @Test
+    void aCompletedQuestWithoutItsOwnEndTakesTheEndOfItsLastObjective() {
+        UUID id = UUID.randomUUID();
+        Map<String, QuestObjectiveDTO> objectives = new HashMap<>();
+        objectives.put("a", objective(id, "one", "a", QuestObjectiveStatus.COMPLETED));
+        quests.save(quest(id, "u1", QuestStatus.COMPLETED, null, objectives)).join();
+        long objectiveEnd = db.getJdbi().withHandle(h -> h.createQuery(
+                        "SELECT completed_at FROM artisan_quests_objective WHERE quest_id = ?")
+                .bind(0, id.toString()).mapTo(java.sql.Timestamp.class).one().getTime());
+        // A quest still running never takes its objectives' time.
+        UUID running = UUID.randomUUID();
+        Map<String, QuestObjectiveDTO> done = new HashMap<>();
+        done.put("a", objective(running, "one", "a", QuestObjectiveStatus.COMPLETED));
+        quests.save(quest(running, "u2", QuestStatus.IN_PROGRESS, null, done)).join();
+
+        assertEquals(objectiveEnd, source.quests(List.of("u1")).get(0).completedAt());
+        assertNull(source.quests(List.of("u2")).get(0).completedAt());
+    }
+
     private StageRow stage(UUID quest, String key) {
         return source.stages(List.of("u1")).stream()
                 .filter(r -> r.questId().equals(quest.toString()) && r.stageKey().equals(key))

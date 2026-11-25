@@ -26,14 +26,22 @@ public class QuestFiguresSqlSource implements QuestFiguresSource {
         this.dbAccess = dbAccess;
     }
 
+    /**
+     * A completed quest's end is its {@code completed_at}, or else the end of its last objective:
+     * quests completed before {@code completed_at} was written have the objectives' times only.
+     */
     @Override
     public List<QuestRow> quests(Collection<String> questUids) {
         List<QuestRow> out = new ArrayList<>();
         for (List<String> uids : chunks(questUids)) {
             dbAccess.getJdbi().useHandle(handle -> handle.createQuery("""
-                            SELECT quest_uid, quest_status, created_at, completed_at
-                            FROM artisan_quests_quest
-                            WHERE quest_uid IN (<uids>)""")
+                            SELECT q.quest_uid AS quest_uid, q.quest_status AS quest_status, q.created_at AS created_at,
+                                   CASE WHEN q.quest_status = 'COMPLETED'
+                                        THEN COALESCE(q.completed_at,
+                                                (SELECT MAX(o.completed_at) FROM artisan_quests_objective o WHERE o.quest_id = q.id))
+                                   END AS completed_at
+                            FROM artisan_quests_quest q
+                            WHERE q.quest_uid IN (<uids>)""")
                     .bindList("uids", uids)
                     .map((rs, ctx) -> new QuestRow(
                             rs.getString("quest_uid"),
