@@ -73,6 +73,25 @@ class QuestGroupDocumentRepositoryTest {
     }
 
     @Test
+    void readsGroupsSavedAsYml() throws Exception {
+        Files.writeString(project.resolve("quest_groups/guild_levels.yml"), group("G1", "Q1", ""));
+
+        QuestConfigLoad load = load();
+
+        assertEquals("G1", load.groups().get("guild_levels").uid());
+        assertFalse(load.hasFailures(), load.failures().toString());
+    }
+
+    @Test
+    void readsTheDefaultLanguageFromArtisanModuleYml() throws Exception {
+        Files.delete(project.resolve("manifest.yaml"));
+        Files.writeString(project.resolve("artisan-module.yml"), "schema: module/v1\ndefault_lang: fr\n");
+        Files.writeString(project.resolve("quest_groups/daily.yml"), group("G1", "Q1", ""));
+
+        assertEquals("Quotidiennes", load().groups().get("daily").name());
+    }
+
+    @Test
     void questActionsAtCompletionAreReadFromActionsComplete() throws Exception {
         Files.writeString(project.resolve("quest_groups/daily.yaml"), group("G1", "Q1", """
                     actions:
