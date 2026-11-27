@@ -61,7 +61,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
         Map<String, List<GroupFile>> byKey = new LinkedHashMap<>();
         for (String project : projects.projectIds()) {
             for (String name : files(project)) {
-                String key = name.substring(0, name.length() - ".yaml".length());
+                String key = name.substring(0, name.lastIndexOf('.'));
                 byKey.computeIfAbsent(key, k -> new ArrayList<>()).add(new GroupFile(project, name));
             }
         }
@@ -122,7 +122,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
                 List<String> files = files(project);
                 if (files.isEmpty()) continue;
                 digest.update(("\0" + project + "\0").getBytes(StandardCharsets.UTF_8));
-                String manifest = projects.read(project, "manifest.yaml");
+                String manifest = manifest(project);
                 if (manifest != null) digest.update(manifest.getBytes(StandardCharsets.UTF_8));
                 for (String name : files) {
                     String content = projects.read(project, DIR + "/" + name);
@@ -138,11 +138,14 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
         }
     }
 
-    /** File names of {@code <project>/quest_groups/*.yaml}, the folder's own files only, sorted. */
+    /**
+     * File names of {@code <project>/quest_groups/*.yml} and {@code *.yaml}, the folder's own files
+     * only, sorted. Artisan moves a module's files to {@code .yml} at startup.
+     */
     private List<String> files(String project) {
         return projects.list(project, DIR).stream()
                 .filter(name -> !name.contains("/"))
-                .filter(name -> name.endsWith(".yaml"))
+                .filter(name -> name.endsWith(".yml") || name.endsWith(".yaml"))
                 .filter(name -> !name.startsWith("."))
                 .sorted()
                 .toList();
@@ -150,7 +153,7 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
 
     /** The project's default language, {@code en} when the manifest names none. */
     public String defaultLang(String project) {
-        String manifest = projects.read(project, "manifest.yaml");
+        String manifest = manifest(project);
         if (manifest == null) return "en";
         Object lang;
         try {
@@ -159,6 +162,12 @@ public final class QuestGroupDocumentRepository implements QuestConfigRepository
             throw new UncheckedIOException(project + "/manifest.yaml: " + e.getMessage(), e);
         }
         return lang != null && !lang.toString().isBlank() ? lang.toString() : "en";
+    }
+
+    /** The project's module file: {@code artisan-module.yml}, or {@code manifest.yaml} before Artisan renamed it. */
+    private @Nullable String manifest(String project) {
+        String manifest = projects.read(project, "artisan-module.yml");
+        return manifest != null ? manifest : projects.read(project, "manifest.yaml");
     }
 
     /** The default language of the module's own project. */
