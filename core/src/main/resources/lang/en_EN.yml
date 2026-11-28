@@ -1,6 +1,6 @@
 # MSQuests - English messages (MiniMessage format).
 # %placeholders% are replaced before MiniMessage parsing.
-file_version: 1
+file_version: 2
 
 quest_admin:
   # /msquests reload (no placeholders)
@@ -32,6 +32,7 @@ quest_admin:
 quest:
   command:
     # Quest placeholders
+    started: '<green>Quest started: <white>%quest_name%</white>.</green>'
     tracked: '<green>You are now tracking <white>%quest_name%</white>.</green>'
     untracked: '<yellow>You are no longer tracking a quest.</yellow>'
     # Not referenced by code yet (no placeholders guaranteed)
@@ -64,6 +65,7 @@ quest:
       max_active_reached: '<red>Maximum number of active quests reached.</red>'
       period_limit_reached: '<red>Quest limit reached for this period.</red>'
       conditions_not_met: '<red>The conditions to start this quest are not met.</red>'
+      locked: '<red>This quest is not reachable yet.</red>'
       cancelled_by_event: '<red>Starting this quest was cancelled.</red>'
   rotate:
     result:
@@ -101,6 +103,7 @@ objective:
   deliver_item: 'Deliver %amount% %material%'
   kill_entity: 'Kill %amount% %entity_type%'
   execute_command: 'Run the command %command%'
+  talk_npc: 'Talk to %npc%'
   fishing: 'Catch %amount% %fish_type%'
   placeholder: 'Reach %value%'
   travel: 'Travel %distance% blocks'
@@ -117,6 +120,8 @@ placeholder:
   quest: '%quest_status_prefix%%quest_name%%quest_status_suffix%'
   # %stage_name%, %stage_key%
   stage: '%stage_name%'
+  # A stage the quest gives no name: %stage_number%
+  stage_default_name: 'Stage %stage_number%'
   # Objective placeholders
   objective: '%objective_status_prefix%%objective_name%%objective_status_suffix% <gray>%objective_progress%/%objective_target%</gray>'
 

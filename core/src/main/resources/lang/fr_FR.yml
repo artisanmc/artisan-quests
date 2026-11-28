@@ -1,6 +1,6 @@
 # MSQuests - messages en français (format MiniMessage).
 # Les %placeholders% sont remplacés avant l’interprétation MiniMessage.
-file_version: 1
+file_version: 2
 
 quest_admin:
   # /msquests reload (aucun placeholder)
@@ -32,6 +32,7 @@ quest_admin:
 quest:
   command:
     # Placeholders de quête
+    started: '<green>Quête commencée : <white>%quest_name%</white>.</green>'
     tracked: '<green>Tu suis désormais la quête <white>%quest_name%</white>.</green>'
     untracked: '<yellow>Tu ne suis plus aucune quête.</yellow>'
     # Pas encore utilisée par le code (aucun placeholder garanti)
@@ -64,6 +65,7 @@ quest:
       max_active_reached: '<red>Nombre maximum de quêtes actives atteint.</red>'
       period_limit_reached: '<red>Limite de quêtes atteinte pour cette période.</red>'
       conditions_not_met: '<red>Les conditions pour lancer cette quête ne sont pas remplies.</red>'
+      locked: "<red>Cette quête n'est pas encore accessible.</red>"
       cancelled_by_event: '<red>Le lancement de cette quête a été annulé.</red>'
   rotate:
     result:
@@ -101,6 +103,7 @@ objective:
   deliver_item: 'Livrer %amount% × %material%'
   kill_entity: 'Tuer %amount% × %entity_type%'
   execute_command: 'Exécuter la commande %command%'
+  talk_npc: 'Parler à %npc%'
   fishing: 'Pêcher %amount% × %fish_type%'
   placeholder: 'Atteindre %value%'
   travel: 'Parcourir %distance% blocs'
@@ -117,6 +120,8 @@ placeholder:
   quest: '%quest_status_prefix%%quest_name%%quest_status_suffix%'
   # %stage_name%, %stage_key%
   stage: '%stage_name%'
+  # Une étape à laquelle la quête ne donne pas de nom : %stage_number%
+  stage_default_name: 'Étape %stage_number%'
   # Placeholders d’objectif
   objective: '%objective_status_prefix%%objective_name%%objective_status_suffix% <gray>%objective_progress%/%objective_target%</gray>'
 

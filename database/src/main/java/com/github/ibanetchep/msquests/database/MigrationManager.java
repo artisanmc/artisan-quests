@@ -1,7 +1,10 @@
 package com.github.ibanetchep.msquests.database;
 
+import com.github.ibanetchep.msquests.database.migrations.AddReachedStageMigration;
 import com.github.ibanetchep.msquests.database.migrations.AddRotationTableMigration;
 import com.github.ibanetchep.msquests.database.migrations.CreateArtisanTablesMigration;
+import com.github.ibanetchep.msquests.database.migrations.CreateImportMapMigration;
+import com.github.ibanetchep.msquests.database.migrations.CreateKeyChangeLedgerMigration;
 import com.github.ibanetchep.msquests.database.migrations.CreateTablesMigration;
 import org.jdbi.v3.core.Jdbi;
 import org.slf4j.Logger;
@@ -21,6 +24,9 @@ public class MigrationManager {
         migrations.add(new CreateTablesMigration(jdbi));
         migrations.add(new AddRotationTableMigration(jdbi));
         migrations.add(new CreateArtisanTablesMigration(jdbi));
+        migrations.add(new CreateImportMapMigration(jdbi));
+        migrations.add(new AddReachedStageMigration(jdbi));
+        migrations.add(new CreateKeyChangeLedgerMigration(jdbi));
     }
 
     public void initialize() {

@@ -6,9 +6,9 @@ import java.util.List;
 /** Where {@link QuestFigures} reads its rows: the quest tables. Blocking, so never on a game thread. */
 public interface QuestFiguresSource {
 
-    /** Every quest row of these quest uids, whatever its status. */
-    List<QuestFigures.QuestRow> quests(Collection<String> questUids);
+    /** Every row of these quests of the group, whatever its status. */
+    List<QuestFigures.QuestRow> quests(String groupKey, Collection<String> questKeys);
 
-    /** The stages of the quests in progress of these quest uids. */
-    List<QuestFigures.StageRow> stages(Collection<String> questUids);
+    /** The stages of the rows in progress of these quests of the group. */
+    List<QuestFigures.StageRow> stages(String groupKey, Collection<String> questKeys);
 }

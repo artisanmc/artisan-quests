@@ -11,6 +11,8 @@ import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.registry.QuestConfigRegistry;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigLoad;
 import com.github.ibanetchep.msquests.core.repository.QuestConfigRepository;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
+import com.github.ibanetchep.msquests.core.repository.KeyChangeRepository;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -29,6 +31,7 @@ public class QuestConfigService {
     private final QuestConfigRepository questConfigRepository;
     private final QuestGroupMapper questGroupMapper;
     private final ConditionChecker conditionChecker;
+    private final KeyChangeRepository keyChangeRepository;
 
     public QuestConfigService(
             Logger logger,
@@ -39,7 +42,6 @@ public class QuestConfigService {
         this(logger, questRegistry, questConfigRepository, questGroupMapper, ConditionChecker.ALWAYS);
     }
 
-    /** @param conditionChecker checks the loaded requirements and objective conditions, to warn about bad ones */
     public QuestConfigService(
             Logger logger,
             QuestConfigRegistry questRegistry,
@@ -47,7 +49,23 @@ public class QuestConfigService {
             QuestGroupMapper questGroupMapper,
             ConditionChecker conditionChecker
     ) {
+        this(logger, questRegistry, questConfigRepository, questGroupMapper, conditionChecker, KeyChangeRepository.NONE);
+    }
+
+    /**
+     * @param conditionChecker checks the loaded requirements and objective conditions, to warn about bad ones
+     * @param keyChangeRepository moves the stored rows of groups and quests whose key changed onto the new one
+     */
+    public QuestConfigService(
+            Logger logger,
+            QuestConfigRegistry questRegistry,
+            QuestConfigRepository questConfigRepository,
+            QuestGroupMapper questGroupMapper,
+            ConditionChecker conditionChecker,
+            KeyChangeRepository keyChangeRepository
+    ) {
         this.conditionChecker = conditionChecker;
+        this.keyChangeRepository = keyChangeRepository;
         this.logger = logger;
         this.questRegistry = questRegistry;
         this.questConfigRepository = questConfigRepository;
@@ -56,15 +74,32 @@ public class QuestConfigService {
 
     /**
      * Startup load: every group that parses is registered, broken files are logged and skipped,
-     * so one bad file does not leave the server without quests.
+     * so one bad file does not leave the server without quests. The rows of groups and quests whose key
+     * changed are moved first; if that fails, the groups that declare a former key are skipped
+     * too, rather than started over next to the progress they would no longer find.
      */
     public CompletableFuture<Void> loadQuestGroups() {
         return questConfigRepository.loadAllGroups()
-                .thenAccept(load -> {
+                .thenCompose(load -> {
                     List<String> failures = new ArrayList<>(load.failures());
                     List<QuestGroupConfig> groups = mapGroups(load, failures);
-                    failures.forEach(f -> logger.severe("Quest group skipped: " + f));
-                    publish(groups);
+                    List<KeyChange> changes = changesOf(load, groups);
+                    return keyChangeRepository.apply(changes)
+                            .handle((moved, e) -> {
+                                if (e != null) {
+                                    logger.log(Level.SEVERE, "Moving the saved progress onto changed keys failed", e);
+                                    Set<String> changed = new HashSet<>();
+                                    changes.forEach(change -> changed.add(groupOf(change)));
+                                    groups.removeIf(group -> changed.contains(group.getKey()));
+                                    changed.forEach(key -> failures.add("group '" + key
+                                            + "': the saved progress could not be moved onto its changed keys"));
+                                } else {
+                                    logMoved(moved);
+                                }
+                                failures.forEach(f -> logger.severe("Quest group skipped: " + f));
+                                publish(groups);
+                                return (Void) null;
+                            });
                 })
                 .exceptionally(e -> {
                     logger.log(Level.SEVERE, "Failed to load quest groups", e);
@@ -73,12 +108,13 @@ public class QuestConfigService {
     }
 
     /**
-     * Admin reload: the new state replaces the current one only if every file parses and maps.
-     * Otherwise nothing changes and the returned future fails with the list of problems, so the
-     * server keeps running the configs it had instead of losing the broken groups.
+     * Admin reload: the new state replaces the current one only if every file parses and maps,
+     * and the rows of groups and quests whose key changed could be moved. Otherwise nothing changes and
+     * the returned future fails with the list of problems, so the server keeps running the
+     * configs it had instead of losing the broken groups.
      */
     public CompletableFuture<Void> reloadQuestGroups() {
-        return questConfigRepository.loadAllGroups().thenAccept(load -> {
+        return questConfigRepository.loadAllGroups().thenCompose(load -> {
             List<String> failures = new ArrayList<>(load.failures());
             List<QuestGroupConfig> groups = mapGroups(load, failures);
 
@@ -87,8 +123,45 @@ public class QuestConfigService {
                 throw new CompletionException(new QuestConfigReloadException(failures));
             }
 
-            publish(groups);
+            return keyChangeRepository.apply(changesOf(load, groups))
+                    .handle((moved, e) -> {
+                        if (e != null) {
+                            logger.log(Level.SEVERE, "Quest reload refused: moving the saved progress onto changed keys failed", e);
+                            throw new CompletionException(new QuestConfigReloadException(List.of(
+                                    "the saved progress could not be moved onto the changed keys: " + e.getMessage())));
+                        }
+                        logMoved(moved);
+                        publish(groups);
+                        return (Void) null;
+                    });
         });
+    }
+
+    /** The key changes of the groups that will be published: a group that failed to map moves nothing. */
+    private static List<KeyChange> changesOf(QuestConfigLoad load, List<QuestGroupConfig> groups) {
+        Set<String> keys = new HashSet<>();
+        groups.forEach(group -> keys.add(group.getKey()));
+        return load.keyChanges().stream().filter(change -> keys.contains(groupOf(change))).toList();
+    }
+
+    private static String groupOf(KeyChange change) {
+        if (change instanceof KeyChange.Group group) return group.to();
+        if (change instanceof KeyChange.Quest quest) return quest.group();
+        if (change instanceof KeyChange.QuestMoved quest) return quest.group();
+        if (change instanceof KeyChange.GroupUid group) return group.group();
+        return ((KeyChange.QuestUid) change).group();
+    }
+
+    private void logMoved(KeyChangeRepository.Applied applied) {
+        if (applied == null) return;
+        if (applied.moved() > 0) {
+            logger.info("Moved " + applied.moved() + " saved row(s) onto the changed keys of groups and quests.");
+        }
+        for (KeyChangeRepository.Left left : applied.left()) {
+            logger.warning(left.rows() + " saved row(s) are still under '" + left.from() + "', which became '" + left.to()
+                    + "' earlier: they are ignored. A server that still loads the content from before the change"
+                    + " wrote them; publish the same content on every server.");
+        }
     }
 
     private List<QuestGroupConfig> mapGroups(QuestConfigLoad load, List<String> failures) {
@@ -145,6 +218,7 @@ public class QuestConfigService {
         for (QuestConfig quest : group.getQuestConfigs().values()) {
             String path = group.getKey() + "/" + quest.getKey();
             warnInvalid(path + " requirements", quest.getRequirements());
+            warnInvalid(path + " completed_when", quest.getCompletedWhen());
             for (QuestStageConfig stage : quest.getStages().values()) {
                 for (QuestObjectiveConfig objective : stage.getObjectives().values()) {
                     warnInvalid(path + " objective " + objective.getKey() + " conditions", objective.getConditions());

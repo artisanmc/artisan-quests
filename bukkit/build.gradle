@@ -70,6 +70,10 @@ shadowJar {
     relocate 'revxrsal.commands', 'com.github.ibanetchep.msquests.libs.lamp'
     // Same for Jdbi, which Core shares with its dependents (MSBoosts): they linked ours instead.
     relocate 'org.jdbi', 'com.github.ibanetchep.msquests.libs.jdbi'
+    // Paper 1.21.8 puts Jackson 2.13 on the server's class path, which a plugin's class loader
+    // asks first: unrelocated, our databind was the server's and our YAML module (2.20) did not
+    // link with it (NoSuchMethodError on any Document read).
+    relocate 'com.fasterxml.jackson', 'com.github.ibanetchep.msquests.libs.jackson'
 }
 
 // The shaded jar shares its coordinates with the plain jar; publish only the latter, which is

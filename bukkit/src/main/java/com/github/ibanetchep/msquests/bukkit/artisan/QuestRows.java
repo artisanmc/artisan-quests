@@ -10,6 +10,7 @@ import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestObjectiveConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestStageConfig;
 import com.github.ibanetchep.msquests.core.quest.config.QuestTierConfig;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjectiveStatus;
@@ -44,7 +45,7 @@ import java.util.UUID;
  *
  * <p>Per-actor fields degrade to neutral values when no actor is resolved (editor preview,
  * or a group whose actor type the viewer has no actor for). The key-set never varies —
- * that is what lets {@code msquests:groups} and {@code msquests:quests} declare themselves
+ * that is what lets {@code quests:groups} and {@code quests:quests} declare themselves
  * STATIC and be placeable slot by slot in the editor.
  */
 public final class QuestRows {
@@ -111,10 +112,33 @@ public final class QuestRows {
                                                @Nullable ActorQuestGroup actorGroup,
                                                @Nullable Function<QuestConfig, QuestStartResult> startCheck,
                                                Translator translator) {
+        return questRow(group, config, actorGroup, startCheck, null, translator);
+    }
+
+    /**
+     * @param ladder the step's state in a ladder group, null elsewhere. A ladder reads its steps
+     *               from their {@code completed_when}, not from the attempts stored: a step
+     *               passed is COMPLETED, one ahead is NOT_STARTED and locked, whatever was done
+     *               before a level was changed by hand.
+     */
+    public static Map<String, Object> questRow(QuestGroupConfig group,
+                                               QuestConfig config,
+                                               @Nullable ActorQuestGroup actorGroup,
+                                               @Nullable Function<QuestConfig, QuestStartResult> startCheck,
+                                               @Nullable LadderSteps.State ladder,
+                                               Translator translator) {
         String questKey = config.getKey();
         // "The actor's current attempt" is answered by the domain (ActorQuestGroup), not
         // re-derived here — quest menus and placeholders ask the same question.
         Quest reference = actorGroup != null ? actorGroup.getCurrentAttempt(questKey) : null;
+        if (ladder == LadderSteps.State.LOCKED) {
+            reference = null;
+        } else if (ladder == LadderSteps.State.CURRENT) {
+            reference = actorGroup != null ? actorGroup.getActiveQuestByKey(questKey) : null;
+        } else if (ladder == LadderSteps.State.REACHED && reference != null
+                && reference.getStatus() != QuestStatus.COMPLETED) {
+            reference = null;
+        }
 
         Map<String, Object> row = new LinkedHashMap<>();
         // Quest keys are only unique within their group — compose so the Row key of a
@@ -139,15 +163,24 @@ public final class QuestRows {
         // `assigned_only`; a menu filters on it to show "my 6 daily quests" rather than
         // the whole catalogue. A plain boolean, because Artisan's menu filters compare
         // for equality — `status_key != NOT_STARTED` is not expressible there.
+        boolean reached = ladder == LadderSteps.State.REACHED;
         row.put("assigned", reference != null);
-        row.put("status_key", reference != null ? reference.getStatus().name() : NOT_STARTED);
-        row.put("status", reference != null
+        row.put("status_key", reached ? QuestStatus.COMPLETED.name()
+                : reference != null ? reference.getStatus().name() : NOT_STARTED);
+        row.put("status", reached ? translator.getRaw(QuestStatus.COMPLETED)
+                : reference != null
                 ? translator.getRaw(reference.getStatus())
                 : translator.getRaw(TranslationKey.ZMENU_QUEST_STATUS_AVAILABLE));
 
         // Whether a new attempt may begin, and what blocks it — the axis a sequential
         // group (rankup: one quest at a time) needs to grey out what is not reachable yet.
         QuestStartResult start = startCheck != null ? startCheck.apply(config) : null;
+        if (ladder != null) {
+            // A ladder hands its current step out by itself: nothing in it is started by hand.
+            start = ladder == LadderSteps.State.LOCKED ? QuestStartResult.LOCKED
+                    : ladder == LadderSteps.State.REACHED ? QuestStartResult.ALREADY_COMPLETED
+                    : QuestStartResult.ALREADY_ACTIVE;
+        }
         row.put("can_start", start != null && start.isSuccess());
         row.put("start_blocker", start == null || start.isSuccess() ? "" : start.name());
         row.put("start_blocker_label", start == null || start.isSuccess()
@@ -181,7 +214,7 @@ public final class QuestRows {
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("key", stageConfig.getKey());
-            row.put("name", nullToEmpty(stageConfig.getName()));
+            row.put("name", QuestStage.displayName(stageConfig.getName(), index + 1, translator));
             row.put("flow", stageConfig.getFlow().name());
             row.put("index", index++);
             row.put("completed", stage != null && stage.isCompleted());
@@ -219,9 +252,14 @@ public final class QuestRows {
         row.put("tracked", trackedQuestId != null && trackedQuestId.equals(quest.getId()));
         row.put("stage_index", quest.getCurrentStageIndex());
         row.put("stage_count", quest.getStages().size());
-        row.put("stage_name", stage != null ? nullToEmpty(stage.getName()) : "");
+        row.put("stage_name", stage != null ? stage.getDisplayName(translator) : "");
         row.put("stage_flow", stage != null ? stage.getStageConfig().getFlow().name() : "");
         row.put("progress_ratio", quest.getProgressRatio());
+        // What to do next, as in the catalog row: a journal names it without walking the tree.
+        QuestObjective current = stage != null ? quest.getFirstActiveObjective() : null;
+        row.put("objective_name", current != null ? translator.getRaw(current.getObjectiveConfig()) : "");
+        row.put("objective_progress", current != null ? current.getProgress() : 0);
+        row.put("objective_target", current != null ? current.getTarget() : 0);
 
         List<Map<String, Object>> objectives = new ArrayList<>();
         for (QuestObjective objective : quest.getObjectives()) {

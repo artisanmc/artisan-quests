@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeCron, isCronShape, nextCronRun } from "./cron";
+import { describeCron, isCronShape, nextCronRun, presetCron, readPreset } from "./cron";
 
 describe("describeCron", () => {
   it("says the common reset periods in words", () => {
@@ -44,5 +44,30 @@ describe("nextCronRun", () => {
     expect(nextCronRun("0 25 * * *", from)).toBeNull();
     expect(nextCronRun("x 4 * * *", from)).toBeNull();
     expect(nextCronRun("0 4 31 2 *", from)).toBeNull();
+  });
+});
+
+describe("reset presets", () => {
+  it("reads the shapes the settings offer", () => {
+    expect(readPreset("")).toEqual({ kind: "never" });
+    expect(readPreset("0 4 * * *")).toEqual({ kind: "daily", time: "04:00" });
+    expect(readPreset("30 18 * * 1")).toEqual({ kind: "weekly", time: "18:30", day: 1 });
+    expect(readPreset("0 4 * * 7")).toEqual({ kind: "weekly", time: "04:00", day: 0 });
+    expect(readPreset("0 0 15 * *")).toEqual({ kind: "monthly", time: "00:00", day: 15 });
+  });
+
+  it("leaves any other cron to the user", () => {
+    expect(readPreset("*/5 * * * *")).toEqual({ kind: "custom" });
+    expect(readPreset("0 4 1 1 *")).toEqual({ kind: "custom" });
+    expect(readPreset("0 4 * * 1-5")).toEqual({ kind: "custom" });
+    expect(readPreset("nonsense")).toEqual({ kind: "custom" });
+  });
+
+  it("writes a preset back as the cron it was read from", () => {
+    for (const cron of ["0 4 * * *", "30 18 * * 1", "0 0 15 * *"]) {
+      expect(presetCron(readPreset(cron))).toBe(cron);
+    }
+    expect(presetCron({ kind: "never" })).toBe("");
+    expect(presetCron({ kind: "custom" })).toBeNull();
   });
 });

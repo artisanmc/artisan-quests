@@ -13,15 +13,20 @@ import { itemLabel, itemValue, objectiveSpec, objectiveTarget } from "./objectiv
  * (`instanceFields`). A quest the
  * draft adds gets the neutral state the server gives a quest nobody started; a quest it
  * removes disappears. An older editor passes no `ctx`: groups and quests then show the
- * draft with that neutral state, and `msquests:active` keeps the server's rows.
+ * draft with that neutral state, and `quests:active` keeps the server's rows.
  *
  * Row shapes mirror `QuestRows` in the plugin; `sourceRows.test.ts` and `QuestSourceVectorsTest`
  * read the same vectors (`testdata/sources/`), so the two cannot drift apart unnoticed.
  */
 
-export const GROUPS = "msquests:groups";
-export const QUESTS = "msquests:quests";
-export const ACTIVE = "msquests:active";
+export const GROUPS = "quests:groups";
+export const QUESTS = "quests:quests";
+export const ACTIVE = "quests:active";
+
+/** A menu written before the rename names a source `msquests:*`, the alias the plugin keeps. */
+function canonical(ref: string): string {
+  return ref.startsWith("msquests:") ? `quests:${ref.slice("msquests:".length)}` : ref;
+}
 
 export interface PreviewContext {
   serverRows?: Record<string, unknown>[];
@@ -43,6 +48,7 @@ const OBJECTIVE_NAMES: Record<string, Record<string, string>> = {
     craft_item: "Craft %amount% %material%",
     harvest_crop: "Harvest %amount% %crop%",
     deliver_item: "Deliver %amount% %material%",
+    talk_npc: "Talk to %npc%",
     kill_entity: "Kill %amount% %entity_type%",
     execute_command: "Run the command %command%",
     fishing: "Catch %amount% %fish_type%",
@@ -55,6 +61,7 @@ const OBJECTIVE_NAMES: Record<string, Record<string, string>> = {
     craft_item: "Fabriquer %amount% × %material%",
     harvest_crop: "Récolter %amount% × %crop%",
     deliver_item: "Livrer %amount% × %material%",
+    talk_npc: "Parler à %npc%",
     kill_entity: "Tuer %amount% × %entity_type%",
     execute_command: "Exécuter la commande %command%",
     fishing: "Pêcher %amount% × %fish_type%",
@@ -66,7 +73,8 @@ const OBJECTIVE_NAMES: Record<string, Record<string, string>> = {
 /** `zmenu.quest.status.available`: the status a quest nobody started shows. */
 const AVAILABLE: Record<string, string> = { en: "Available", fr: "Disponible" };
 
-export function questsLocalRows(project: unknown, ref: string, ctx?: PreviewContext): Row[] | null {
+export function questsLocalRows(project: unknown, named: string, ctx?: PreviewContext): Row[] | null {
+  const ref = canonical(named);
   if (ref !== GROUPS && ref !== QUESTS && ref !== ACTIVE) return null;
   const groups = (project as ProjectLike).documents?.[KIND] as QuestGroup[] | undefined;
   // No quest group in this project: another project may hold them, or the server alone.
@@ -144,16 +152,18 @@ function questRow(group: QuestGroup, quest: Quest, server: Row | undefined, lang
 }
 
 /**
- * The fields an attempt derives from its config. The server stores only each objective's
- * progress and its COMPLETED/FAILED flag, keyed by objective key within the quest
- * (`QuestFactory.buildQuest`), and derives the rest on every read: an objective is done once
- * its progress reaches the target, a stage once all its objectives are, the current stage is
- * the first one not done. The same derivation over the draft gives exactly the rows the server
- * will send once the draft is deployed, a lowered target or a removed stage included.
+ * The fields an attempt derives from its config. The server stores each objective's progress
+ * and its COMPLETED/FAILED flag, keyed by objective key within the quest, and the key of the
+ * stage the quest stands on (`QuestFactory.buildQuest`); it derives the rest on every read. An
+ * objective is done once completed or once its progress reaches the target, a stage once all
+ * its objectives are or once the attempt went past it, the current stage is the first one not
+ * done. What was done or passed stays so whatever the draft changes: the same derivation over
+ * the draft gives the rows the server will send once it is deployed, a lowered target, a stage
+ * added behind the player or a removed one included.
  */
 function instanceFields(quest: Quest, server: Row | undefined, lang: string): Row {
   const stored = server ? storedObjectives(server) : undefined;
-  const stages = stageRows(quest, stored, lang);
+  const stages = stageRows(quest, stored, server ? reachedStage(server) : "", lang);
   const current = stages.find((s) => s.active === true);
   const next = current ? (current.objectives as Row[]).find((o) => o.done !== true) : undefined;
   return {
@@ -194,19 +204,39 @@ function storedObjectives(server: Row): Map<string, StoredObjective> {
   return stored;
 }
 
-/** `undefined` stored state: no attempt, every stage and objective in its neutral state. */
-function stageRows(quest: Quest, stored: Map<string, StoredObjective> | undefined, lang: string): Row[] {
+/** The key of the stage the server's attempt stands on, "" when it stands on none. */
+function reachedStage(server: Row): string {
+  return str(asRows(server.stages).find((s) => s.active === true)?.key);
+}
+
+/**
+ * `undefined` stored state: no attempt, every stage and objective in its neutral state.
+ * `reached`: the stage the attempt stands on; while the draft still has it, the stages before
+ * it are behind the player (`QuestStage.isPassed`).
+ */
+function stageRows(
+  quest: Quest,
+  stored: Map<string, StoredObjective> | undefined,
+  reached: string,
+  lang: string,
+): Row[] {
+  const reachedIndex = stored && reached ? quest.stages.findIndex((s) => s.key === reached) : -1;
   const stages = quest.stages.map((stage, index) => {
-    const objectives = stage.objectives.map((o) => objectiveRow(o, stored?.get(o.key), lang));
+    const passed = index < reachedIndex;
+    const objectives = stage.objectives.map((o) => {
+      const row = objectiveRow(o, storedFor(o, stored), lang);
+      if (passed && row.status_key !== "FAILED") row.status_key = "COMPLETED";
+      return row;
+    });
     return {
       key: stage.key,
       name: stage.title,
       flow: flow(stage),
       index,
-      // `QuestStage.isCompleted`: all objectives done, so an empty stage is.
-      completed: stored !== undefined && objectives.every((o) => o.done),
+      // `QuestStage.isCompleted`: passed, or all objectives done, so an empty stage is.
+      completed: stored !== undefined && (passed || objectives.every((o) => o.done)),
       active: false,
-      progress_ratio: stored ? mean(objectives.map((o) => o.progress_ratio as number)) : 0,
+      progress_ratio: stored ? (passed ? 1 : mean(objectives.map((o) => o.progress_ratio as number))) : 0,
       objectives,
     } as Row;
   });
@@ -226,6 +256,28 @@ function stageRows(quest: Quest, stored: Map<string, StoredObjective> | undefine
   return stages;
 }
 
+/**
+ * `QuestFactory.stored`: the progress under the objective's key, else under one of its former
+ * keys (`old_key`, or the key the file had before this draft changed it); progress stored for
+ * another objective type is not its own.
+ */
+function storedFor(
+  objective: Objective,
+  stored: Map<string, StoredObjective> | undefined,
+): StoredObjective | undefined {
+  if (!stored) return undefined;
+  const written = objective.params.old_key;
+  const former = [...(Array.isArray(written) ? written : written == null ? [] : [written]), objective.savedKey];
+  let found = stored.get(objective.key);
+  for (const key of former) {
+    if (found) break;
+    if (typeof key === "string") found = stored.get(key);
+  }
+  if (!found) return undefined;
+  const type = str(found.row.type);
+  return type === "" || type === objective.type ? found : undefined;
+}
+
 function objectiveRow(objective: Objective, stored: StoredObjective | undefined, lang: string): Row {
   const target = targetOf(objective);
   const progress = stored?.progress ?? 0;
@@ -233,18 +285,19 @@ function objectiveRow(objective: Objective, stored: StoredObjective | undefined,
   // The server's name is exact (its lang file, the item's translated name): kept while the
   // objective asks the same thing, else rebuilt from the default names.
   const same = server && server.type === objective.type && server.target === target;
+  const done = stored !== undefined && (stored.flag === "COMPLETED" || progress >= target);
   return {
     key: objective.key,
     name: same && typeof server.name === "string" ? server.name : objectiveName(objective, lang),
     type: objective.type,
     progress,
     target,
-    // `AbstractQuestObjective`: done once the progress reaches the target, whatever the
-    // stored flag says; the ratio is clamped, so a lowered target reads 1, not 1.4.
-    progress_ratio: stored ? (target <= 0 ? 1 : Math.min(Math.max(progress / target, 0), 1)) : 0,
-    completed: stored !== undefined && progress >= target,
-    status_key: stored?.flag || "PENDING",
-    done: stored !== undefined && progress >= target,
+    // `AbstractQuestObjective`: done once completed, or once the progress reaches the target
+    // (a lowered one included); the ratio is clamped, so a lowered target reads 1, not 1.4.
+    progress_ratio: stored ? (target <= 0 || done ? 1 : Math.min(Math.max(progress / target, 0), 1)) : 0,
+    completed: done,
+    status_key: stored?.flag === "FAILED" ? "FAILED" : done ? "COMPLETED" : "PENDING",
+    done,
   };
 }
 
@@ -262,6 +315,9 @@ function activeRow(quest: Quest, server: Row, lang: string): Row {
     stage_name: fields.stage_name,
     stage_flow: fields.stage_flow,
     progress_ratio: fields.progress_ratio,
+    objective_name: fields.objective_name,
+    objective_progress: fields.objective_progress,
+    objective_target: fields.objective_target,
     objectives: stages.flatMap((s) => s.objectives as Row[]),
     stages,
   };

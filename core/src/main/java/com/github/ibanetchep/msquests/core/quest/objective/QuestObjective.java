@@ -11,6 +11,14 @@ public interface QuestObjective extends PlaceholderProvider, Translatable {
     QuestStage getStage();
     QuestObjectiveConfig getObjectiveConfig();
     boolean isCompleted();
+
+    /**
+     * False for an objective that is completed without its completion ever having been run: its
+     * progress reached a target lowered since. Its events and actions are still owed.
+     */
+    default boolean isCompletionRecorded() {
+        return true;
+    }
     void complete();
     void incrementProgress(int progress);
     double getProgressRatio();

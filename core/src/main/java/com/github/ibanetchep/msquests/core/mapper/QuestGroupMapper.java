@@ -80,7 +80,7 @@ public class QuestGroupMapper {
                 distributionDto,
                 QuestGroupConfig.DEFAULT_OBJECTIVE_LINE.equals(entity.getObjectiveLine()) ? null : entity.getObjectiveLine(),
                 entity.getUid(),
-                entity.getUid() != null ? entity.getResetZone().getId() : null,
+                entity.getUid() != null || entity.getSourceProject() != null ? entity.getResetZone().getId() : null,
                 entity.getSourceProject()
         );
     }
@@ -110,7 +110,7 @@ public class QuestGroupMapper {
         DistributionConfig distributionConfig = null;
         if (dto.distribution() != null) {
             DistributionConfigDTO d = dto.distribution();
-            QuestDistributionStrategy strategy = QuestDistributionStrategy.valueOf(d.strategy().toUpperCase());
+            QuestDistributionStrategy strategy = QuestDistributionStrategy.parse(d.strategy());
             int amount = d.amount() != null ? d.amount() : 1;
             Set<DistributionTrigger> triggers = d.triggers() != null
                     ? d.triggers().stream().map(t -> DistributionTrigger.valueOf(t.toUpperCase())).collect(Collectors.toSet())

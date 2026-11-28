@@ -55,6 +55,42 @@ class DeliverItemObjectiveTest extends AbstractObjectiveHandlerTest {
     }
 
     @Test
+    void canCompleteOnlyWithTheWholeMissingAmount() {
+        player.getInventory().addItem(new ItemStack(Material.STONE, 9));
+        DeliverItemObjective objective = objective(10, 0);
+
+        assertEquals(9, objective.available(player));
+        org.junit.jupiter.api.Assertions.assertFalse(objective.canComplete(player));
+        assertEquals(9, count(Material.STONE));
+
+        player.getInventory().addItem(new ItemStack(Material.STONE, 1));
+        org.junit.jupiter.api.Assertions.assertTrue(objective.canComplete(player));
+        org.junit.jupiter.api.Assertions.assertTrue(objective(15, 5).canComplete(player));
+    }
+
+    @Test
+    void readsTheNpcAndItsConversations() {
+        DeliverItemObjectiveConfig config = objective(Map.of("material", "STONE", "amount", 10,
+                "npc", "bruno", "conversation", "bruno_thanks", "missing", "bruno_waits"), 0).getObjectiveConfig();
+
+        assertEquals("bruno", config.getNpc());
+        assertEquals("bruno_thanks", config.getConversation());
+        assertEquals("bruno_waits", config.getMissingConversation());
+        assertEquals("bruno", config.toDTO().params().get("npc"));
+    }
+
+    @Test
+    void readsTheLinesTheNpcSays() {
+        DeliverItemObjectiveConfig config = objective(Map.of("material", "STONE", "amount", 10, "npc", "bruno",
+                "line", Map.of("fr", "Merci.", "en", "Thanks."), "missing_line", "Some are missing."), 0).getObjectiveConfig();
+
+        assertEquals(Map.of("fr", "Merci.", "en", "Thanks."), config.getLine());
+        assertEquals("Some are missing.", config.getMissingLine());
+        assertEquals("Some are missing.", config.toDTO().params().get("missing_line"));
+        assertEquals(Map.of("fr", "Merci.", "en", "Thanks."), config.toDTO().params().get("line"));
+    }
+
+    @Test
     void takesOnlyTheItemsMatchingTheSpec() {
         ItemStack named = new ItemStack(Material.STONE, 5);
         named.editMeta(meta -> meta.displayName(net.kyori.adventure.text.Component.text("Pierre bénie")));
@@ -76,6 +112,14 @@ class DeliverItemObjectiveTest extends AbstractObjectiveHandlerTest {
 
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> com.github.ibanetchep.msquests.core.util.JsonSchemaValidator
                 .validate(Map.of("material", "STONE", "amount", 64), schema));
+    }
+
+    @Test
+    void anItemSpecPassesTheSchema() {
+        String schema = com.github.ibanetchep.msquests.core.util.JsonSchemaGenerator.generateSchema(DeliverItemObjectiveConfig.class);
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> com.github.ibanetchep.msquests.core.util.JsonSchemaValidator
+                .validate(Map.of("item", Map.of("material", "STONE", "title", "Pierre bénie"), "amount", 64), schema));
     }
 
     @AfterEach
