@@ -2956,14 +2956,13 @@ const qa = {
   quest: "<gold>%quest_name%",
   objective: "<white>%objective_name%",
   progress: "<gray>[<yellow>%objective_progress%<gray>/%objective_target%]"
-}, wa = [
-  { text: "objective", x: -100, y: 6, width: 150, align: "left" },
-  { text: "progress", x: 52, y: 6, width: 48, align: "right" }
-], Na = (e) => typeof e == "object" && e !== null && !Array.isArray(e);
-function _a(e, t) {
+}, wa = [{ text: "objective", x: -150, y: 6, width: 300, align: "center" }], Na = {
+  objective: "<white>%objective_name% <gray>[<yellow>%objective_progress%<gray>/%objective_target%]"
+}, _a = (e) => typeof e == "object" && e !== null && !Array.isArray(e);
+function ja(e, t) {
   const n = [];
   e.schema !== void 0 && e.schema !== Pe && n.push(`schema: ${String(e.schema)}`);
-  const a = {}, s = Na(e.texts) ? e.texts : {};
+  const a = {}, s = _a(e.texts) ? e.texts : {};
   for (const l of ae) {
     const c = s[l];
     typeof c == "string" && (a[l] = c);
@@ -2979,7 +2978,7 @@ function _a(e, t) {
     rest: i
   }, i18nKeys: {}, unsupported: n };
 }
-function ja(e) {
+function Ca(e) {
   const t = {};
   for (const n of ae) {
     const a = e.texts[n];
@@ -2993,22 +2992,22 @@ function ja(e) {
     ...Object.keys(t).length ? { texts: t } : {}
   };
 }
-function Ca(e) {
+function Sa(e) {
   return Jt(Zt(Array.isArray(e.layout) ? e.layout : []).layers);
 }
 function $t(e, t) {
   const n = e.texts[t];
   return n === void 0 || n === "" ? xa[t] : n;
 }
-function Sa(e, t) {
+function Aa(e, t) {
   return e.replace(/%([a-z_]+)%/g, (n, a) => t[a] ?? n);
 }
-function Aa(e, t) {
+function Ea(e, t) {
   const n = {};
-  for (const a of ae) n[a] = [Sa($t(e, a), t)];
+  for (const a of ae) n[a] = [Aa($t(e, a), t)];
   return { text: n };
 }
-function Ea({ projectId: e, documentId: t, document: n }) {
+function Ta({ projectId: e, documentId: t, document: n }) {
   je("msquests", Te);
   const a = n, s = pe(), i = (c) => tt({ projectId: e, kind: Tt, id: t, doc: c }), o = {
     quest_name: s("hud.sample.quest"),
@@ -3032,7 +3031,7 @@ function Ea({ projectId: e, documentId: t, document: n }) {
           value: a.layout,
           onChange: (c) => i({ ...a, layout: c }),
           slots: ae.map((c) => ({ name: c, kind: "text", label: s(`hud.slot.${c}`) })),
-          preview: Aa(a, o)
+          preview: Ea(a, o)
         }
       )
     ] }),
@@ -3057,7 +3056,7 @@ function Ea({ projectId: e, documentId: t, document: n }) {
     ] })
   ] });
 }
-const Ta = {
+const $a = {
   kind: Tt,
   dir: ka,
   schemaVersion: Pe,
@@ -3066,15 +3065,21 @@ const Ta = {
   label: Ue.en,
   labels: Ue,
   icon: Et,
-  component: Ea,
+  component: Ta,
   // The composer lays its layers, the screen and the panel side by side.
   wide: !0,
-  create: ({ id: e, projectId: t }) => ({ id: e, projectId: t, layout: structuredClone(wa), texts: {}, rest: {} }),
-  parse: (e, t) => _a(e, t),
-  serialize: (e) => ja(e),
-  pack: { images: Ca }
-}, Ye = "quests:groups", Je = "quests:quests", $a = "quests:active";
-function La(e) {
+  create: ({ id: e, projectId: t }) => ({
+    id: e,
+    projectId: t,
+    layout: structuredClone(wa),
+    texts: { ...Na },
+    rest: {}
+  }),
+  parse: (e, t) => ja(e, t),
+  serialize: (e) => Ca(e),
+  pack: { images: Sa }
+}, Ye = "quests:groups", Je = "quests:quests", La = "quests:active";
+function Oa(e) {
   return e.startsWith("msquests:") ? `quests:${e.slice(9)}` : e;
 }
 const Ze = {
@@ -3105,15 +3110,15 @@ const Ze = {
     travel: "Parcourir %distance% blocs"
   }
 }, Xe = { en: "Available", fr: "Disponible" };
-function Oa(e, t, n) {
-  const a = La(t);
-  if (a !== Ye && a !== Je && a !== $a) return null;
+function Ra(e, t, n) {
+  const a = Oa(t);
+  if (a !== Ye && a !== Je && a !== La) return null;
   const s = e.documents?.[se];
   if (!s || s.length === 0) return null;
   const i = e.defaultLang ?? "en", o = n?.serverRows, l = n?.params?.group || void 0, c = [...s].sort((u, m) => u.id < m.id ? -1 : u.id > m.id ? 1 : 0);
   if (a === Ye) {
     const u = Ne(o, "key");
-    return c.map((m) => Ra(m, u.get(m.id), i));
+    return c.map((m) => Da(m, u.get(m.id), i));
   }
   if (a === Je) {
     const u = Ne(o, "id");
@@ -3125,10 +3130,10 @@ function Oa(e, t, n) {
     const m = d.get(P(u.group));
     if (!m) return [u];
     const q = m.quests.find((h) => h.key === P(u.quest_key));
-    return q ? [Ka(q, u, i)] : [];
+    return q ? [Ua(q, u, i)] : [];
   });
 }
-function Ra(e, t, n) {
+function Da(e, t, n) {
   const a = Ne(ee(t?.quests), "key");
   return {
     key: e.id,
@@ -3154,7 +3159,7 @@ function Lt(e, t, n, a) {
     key: t.key,
     name: t.title,
     description: t.description,
-    duration: Ga(t.duration),
+    duration: za(t.duration),
     tier: t.tier,
     tier_name: s ? s.title : "",
     assigned: n?.assigned ?? !1,
@@ -3168,7 +3173,7 @@ function Lt(e, t, n, a) {
   };
 }
 function Ot(e, t, n) {
-  const a = t ? Da(t) : void 0, s = Pa(e, a, t ? Ia(t) : "", n), i = s.find((l) => l.active === !0), o = i ? i.objectives.find((l) => l.done !== !0) : void 0;
+  const a = t ? Ia(t) : void 0, s = Ma(e, a, t ? Pa(t) : "", n), i = s.find((l) => l.active === !0), o = i ? i.objectives.find((l) => l.done !== !0) : void 0;
   return {
     objective_name: o?.name ?? "",
     objective_progress: o?.progress ?? 0,
@@ -3180,7 +3185,7 @@ function Ot(e, t, n) {
     stages: s.map((l) => ({ ...l, objectives: l.objectives.map(({ done: c, ...d }) => d) }))
   };
 }
-function Da(e) {
+function Ia(e) {
   const t = /* @__PURE__ */ new Map(), n = [
     ...ee(e.objectives),
     ...ee(e.stages).flatMap((a) => ee(a.objectives))
@@ -3195,19 +3200,19 @@ function Da(e) {
   }
   return t;
 }
-function Ia(e) {
+function Pa(e) {
   return P(ee(e.stages).find((t) => t.active === !0)?.key);
 }
-function Pa(e, t, n, a) {
+function Ma(e, t, n, a) {
   const s = t && n ? e.stages.findIndex((l) => l.key === n) : -1, i = e.stages.map((l, c) => {
     const d = c < s, u = l.objectives.map((m) => {
-      const q = Ha(m, Ma(m, t), a);
+      const q = Ka(m, Ha(m, t), a);
       return d && q.status_key !== "FAILED" && (q.status_key = "COMPLETED"), q;
     });
     return {
       key: l.key,
       name: l.title,
-      flow: Fa(l),
+      flow: Ga(l),
       index: c,
       // `QuestStage.isCompleted`: passed, or all objectives done, so an empty stage is.
       completed: t !== void 0 && (d || u.every((m) => m.done)),
@@ -3226,7 +3231,7 @@ function Pa(e, t, n, a) {
   }
   return i;
 }
-function Ma(e, t) {
+function Ha(e, t) {
   if (!t) return;
   const n = e.params.old_key, a = [...Array.isArray(n) ? n : n == null ? [] : [n], e.savedKey];
   let s = t.get(e.key);
@@ -3238,11 +3243,11 @@ function Ma(e, t) {
   const i = P(s.row.type);
   return i === "" || i === e.type ? s : void 0;
 }
-function Ha(e, t, n) {
-  const a = Qa(e), s = t?.progress ?? 0, i = t?.row, o = i && i.type === e.type && i.target === a, l = t !== void 0 && (t.flag === "COMPLETED" || s >= a);
+function Ka(e, t, n) {
+  const a = Fa(e), s = t?.progress ?? 0, i = t?.row, o = i && i.type === e.type && i.target === a, l = t !== void 0 && (t.flag === "COMPLETED" || s >= a);
   return {
     key: e.key,
-    name: o && typeof i.name == "string" ? i.name : Ua(e, n),
+    name: o && typeof i.name == "string" ? i.name : Qa(e, n),
     type: e.type,
     progress: s,
     target: a,
@@ -3254,7 +3259,7 @@ function Ha(e, t, n) {
     done: l
   };
 }
-function Ka(e, t, n) {
+function Ua(e, t, n) {
   const a = Ot(e, t, n), s = a.stages;
   return {
     ...t,
@@ -3272,7 +3277,7 @@ function Ka(e, t, n) {
     stages: s
   };
 }
-function Ua(e, t) {
+function Qa(e, t) {
   const a = (Ze[t.slice(0, 2)] ?? Ze.en)[e.type];
   if (!a) return e.type;
   const s = e.params, i = {
@@ -3300,16 +3305,16 @@ function et(e) {
   const s = P(n.material);
   return /^(minecraft:)?[a-z_0-9]+$/i.test(s) && !s.includes(":") ? le("item", s) : s || bt(n);
 }
-function Qa(e) {
+function Fa(e) {
   const t = he(e.params);
   if (t === void 0) return 1;
   const n = Number(t);
   return Number.isFinite(n) ? n : 1;
 }
-function Fa(e) {
+function Ga(e) {
   return e.flow === "" ? "PARALLEL" : e.flow.toUpperCase();
 }
-function Ga(e) {
+function za(e) {
   const t = e.trim().toLowerCase().replace(/ /g, "");
   if (t === "") return 0;
   if (/^\d+$/.test(t)) return Number(t);
@@ -3333,7 +3338,7 @@ function _e(e, t) {
 function P(e) {
   return typeof e == "string" ? e : "";
 }
-const za = {
+const Wa = {
   id: "msquests",
   displayName: "Quests",
   schemaVersion: "quest_group/v1",
@@ -3342,12 +3347,12 @@ const za = {
   // Quests are Documents: they are edited from the project, no screen of their own.
   routes: [],
   // The groups, and the HUD of the tracked quest at the top of the screen (SDK 1.24).
-  documents: [qa, Ta],
+  documents: [qa, $a],
   // The quest sources previewed from the draft, joined to the player's state on the server.
-  localPreviewRows: Oa,
+  localPreviewRows: Ra,
   // The Quests tab of the server's Statistics space (SDK 1.23).
   stats: { label: { en: "Quests", fr: "Quêtes" }, component: En }
-}, Ya = { ...za, sdk: "1.24.0" };
+}, Ja = { ...Wa, sdk: "1.24.0" };
 export {
-  Ya as default
+  Ja as default
 };

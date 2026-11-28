@@ -25,10 +25,12 @@ With Artisan 1.13+, the tracked quest can be drawn as a HUD of your own at the t
 a background image, an icon, the objective and its count in colour.
 
 1. In the editor, under **Tracked quest HUDs** of the `quests` project, create one (`tracked`).
-   Lay it out with the mouse: add your images (a background, an icon) and place the
-   **Objective**, **Progress** and **Quest** texts. Each text is MiniMessage with the
-   objective's placeholders, `<gray>[<yellow>%objective_progress%<gray>/%objective_target%]` by
-   default for the progress.
+   It starts as one centred line, the objective followed by its count
+   (`<white>%objective_name% <gray>[<yellow>%objective_progress%<gray>/%objective_target%]`).
+   Lay it out with the mouse: add your images (a background, an icon), and the **Quest** or
+   **Progress** texts if you want them on a line of their own. Keep the count in the
+   objective's line when it should follow the name: a text layer has a fixed place, the name
+   does not have a fixed width.
 2. Deploy: the images go into Artisan's resource pack.
 3. Name it in `config.yml` and restart:
 

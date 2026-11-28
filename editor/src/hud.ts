@@ -46,11 +46,18 @@ export interface QuestHud {
   rest: Raw;
 }
 
-/** A new HUD: the objective and its count side by side under the top of the screen. */
-export const HUD_START: unknown[] = [
-  { text: "objective", x: -100, y: 6, width: 150, align: "left" },
-  { text: "progress", x: 52, y: 6, width: 48, align: "right" },
-];
+/**
+ * A new HUD: one line, centred under the top of the screen, the objective followed by its count.
+ * One text rather than two side by side: the objective's name has no fixed width, so a count
+ * in a layer of its own overlaps a long name or floats away from a short one. The `progress`
+ * layer stays for a layout that wants the count elsewhere (under the line, beside an icon).
+ */
+export const HUD_START: unknown[] = [{ text: "objective", x: -150, y: 6, width: 300, align: "center" }];
+
+/** The texts of a new HUD: its one line carries the count. */
+export const HUD_START_TEXTS: Partial<Record<HudSlot, string>> = {
+  objective: "<white>%objective_name% <gray>[<yellow>%objective_progress%<gray>/%objective_target%]",
+};
 
 const isMap = (v: unknown): v is Raw => typeof v === "object" && v !== null && !Array.isArray(v);
 
