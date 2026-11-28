@@ -54,6 +54,7 @@ tracking:
     color: WHITE
     style: PROGRESS
     show_progress: true
+    hud: ''
 
 placeholders:
   cycle_duration_seconds: 5
@@ -71,5 +72,6 @@ deliver_item:
 | `actor_type.<type>.start_actions`, `progress_actions`, `complete_actions` | list | messages, titles, action bars | What the actor sees when a quest starts, progresses or completes. `type`: `message`, `title`, `action_bar`; texts are keys of the language file. |
 | `tracking.bossbar.enabled` | boolean | `false` | Show the tracked quest in a boss bar. |
 | `tracking.bossbar.message`, `color`, `style`, `show_progress` | | | Its text, colour, style and whether it fills with progress. |
+| `tracking.bossbar.hud` | string | `''` | A `quest_hud` of the editor (`<project>:<id>` or `<id>`), drawn at the top of the screen instead of the bar for a player who has Artisan's resource pack (Artisan 1.13+). The others keep the bar. |
 | `placeholders.cycle_duration_seconds` | integer | `5` | How long `%msquests_group_<group>_active_*%` shows each active quest before the next. |
 | `deliver_item.include_shulker_boxes` | boolean | `true` | A `deliver_item` objective also takes items from shulker boxes in the inventory, once the inventory itself is empty. |

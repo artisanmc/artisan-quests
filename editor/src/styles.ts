@@ -132,4 +132,6 @@ export const QUESTS_CSS = `
 .aq-stats-pick .select { height: 32px; padding: 5px 10px; font-size: 13px; min-width: 220px; }
 .aq-stats-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
 .aq-stats-empty { padding: 24px 0; text-align: center; color: var(--text-mut); font-size: 13px; }
+.aq-section { display: flex; flex-direction: column; gap: 8px; }
+.aq-hint { color: var(--text-mut); font-size: 12px; }
 `;

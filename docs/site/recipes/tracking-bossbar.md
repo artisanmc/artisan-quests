@@ -18,3 +18,29 @@ tracking:
 
 Restart, then `/quest track daily hunter`: the boss bar shows the objective and fills as zombies die.
 `/quest untrack` hides it. In a menu, a button with `quests:track` does the same.
+
+## A styled HUD instead of the bar
+
+With Artisan 1.13+, the tracked quest can be drawn as a HUD of your own at the top of the screen:
+a background image, an icon, the objective and its count in colour.
+
+1. In the editor, under **Tracked quest HUDs** of the `quests` project, create one (`tracked`).
+   Lay it out with the mouse: add your images (a background, an icon) and place the
+   **Objective**, **Progress** and **Quest** texts. Each text is MiniMessage with the
+   objective's placeholders, `<gray>[<yellow>%objective_progress%<gray>/%objective_target%]` by
+   default for the progress.
+2. Deploy: the images go into Artisan's resource pack.
+3. Name it in `config.yml` and restart:
+
+```yaml
+tracking:
+  bossbar:
+    enabled: true
+    hud: tracked        # or quests:tracked
+```
+
+A player without the pack (or on Bedrock) keeps the boss bar above. So does everyone while an
+image of the HUD is not in the pack yet (the console says which). Artisan draws the HUD in a
+yellow boss bar it makes transparent: another plugin's yellow bar loses its bar for players who
+have the pack.
+

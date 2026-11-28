@@ -19,6 +19,8 @@ public class TrackingBossBarService {
     private final TrackingBossBarConfig config;
     private final PlayerProfileRegistry profileRegistry;
     private final Map<UUID, BossBar> bossBars = new ConcurrentHashMap<>();
+    /** Asked first: what it draws replaces the boss bar (Artisan's HUD, {@code tracking.bossbar.hud}). */
+    private volatile TrackingHud hud = TrackingHud.NONE;
 
     public TrackingBossBarService(TrackingBossBarConfig config, PlayerProfileRegistry profileRegistry) {
         this.config = config;
@@ -27,6 +29,11 @@ public class TrackingBossBarService {
 
     public boolean isEnabled() {
         return config.enabled();
+    }
+
+    /** The HUD drawn instead of the boss bar where it can be; {@link TrackingHud#NONE} for none. */
+    public void setHud(TrackingHud hud) {
+        this.hud = hud == null ? TrackingHud.NONE : hud;
     }
 
     public void refreshBossBar(Player player) {
@@ -50,6 +57,11 @@ public class TrackingBossBarService {
             return;
         }
 
+        if (hud.show(player, quest, objective)) {
+            hideBar(player);
+            return;
+        }
+
         String text = MessageBuilder.legacy(resolveMessage(quest, objective));
         float progress = computeProgress(objective);
 
@@ -70,6 +82,11 @@ public class TrackingBossBarService {
     }
 
     public void hideBossBar(Player player) {
+        hud.hide(player);
+        hideBar(player);
+    }
+
+    private void hideBar(Player player) {
         BossBar bossBar = bossBars.remove(player.getUniqueId());
         if (bossBar != null) {
             bossBar.removeAll();

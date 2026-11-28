@@ -109,7 +109,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
     /** Built by {@code editor/} ({@code npm run build}); the SDK version its build prints. */
     static final String EDITOR_BUNDLE = "artisan-editor/ui.js";
-    static final String EDITOR_SDK = "1.23.0";
+    static final String EDITOR_SDK = "1.24.0";
 
     /** The example quests: raise {@link #TEMPLATE_VERSION} whenever its files change. */
     static final String TEMPLATE = "daily";
@@ -169,6 +169,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         this.api = api;
 
         api.getDocumentKinds().register(groupKind(api));
+        api.getDocumentKinds().register(new DocumentKindDeclaration(
+                QuestHud.KIND, QuestHud.DIR, List.of(QuestHud.SCHEMA), null).withPackImages(new QuestHudPackImages()));
         registerFolder(api);
         registerTemplate(api);
         registerJournal(api);
@@ -183,6 +185,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         registerGameEvents(api);
         registerActorTypes(api);
         registerImports(api);
+        registerTrackingHud(api);
 
         // STATIC: the key-set is the loaded configuration, enumerable without a player,
         // so a menu can place "the daily group" on a specific slot. Only the per-actor
@@ -489,6 +492,70 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     @Override
     public void onReload() {
         plugin.onArtisanProjectsReloaded();
+        if (api != null && trackingHud != null) {
+            hud = loadHud(api);
+            plugin.getTrackingBossBarService().refreshAll();
+        }
+    }
+
+    /** Artisan API whose overlay has the boss bar slot ({@code OverlayApi.Slot.BOSS_BAR}). */
+    static final String BOSS_BAR_HUD_API = "1.13.0";
+
+    /** The tracked quest's HUD when {@code tracking.bossbar.hud} names one and Artisan can draw it. */
+    private @Nullable ArtisanTrackingHud trackingHud;
+    /** The {@code quest_hud} in use, read again at each reload; null when none is found. */
+    private volatile @Nullable QuestHud hud;
+    /** The images already reported missing from the pack, so that each is told once. */
+    private final java.util.Set<String> reportedMissing = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * The tracked quest drawn in Artisan's boss bar slot instead of the bar, for the players who have
+     * the pack ({@code tracking.bossbar.hud}). On an older Artisan, every player keeps the bar.
+     */
+    private void registerTrackingHud(ArtisanAPI api) {
+        String ref = plugin.getGlobalConfig().trackingBossBar().hud();
+        if (ref.isEmpty()) return;
+        if (!api.isCompatibleWith(BOSS_BAR_HUD_API)) {
+            plugin.getLogger().warning("tracking.bossbar.hud needs Artisan API " + BOSS_BAR_HUD_API
+                    + "+ (installed: " + api.getApiVersion() + "): the tracked quest stays in the boss bar.");
+            return;
+        }
+        hud = loadHud(api);
+        trackingHud = new ArtisanTrackingHud(api.getOverlay(), () -> hud, missing -> {
+            for (String asset : missing) {
+                if (reportedMissing.add(asset)) {
+                    plugin.getLogger().warning("The quest HUD's image '" + asset + "' is not in the resource pack yet"
+                            + " (deploy from the editor to rebuild it): the boss bar is shown meanwhile.");
+                }
+            }
+        });
+        plugin.getTrackingBossBarService().setHud(trackingHud);
+    }
+
+    /** The {@code quest_hud} named by {@code tracking.bossbar.hud}, its problems logged; null when absent. */
+    private @Nullable QuestHud loadHud(ArtisanAPI api) {
+        String ref = plugin.getGlobalConfig().trackingBossBar().hud();
+        int colon = ref.indexOf(':');
+        String wantedProject = colon < 0 ? null : ref.substring(0, colon);
+        String wantedId = colon < 0 ? ref : ref.substring(colon + 1);
+        var content = api.getProject();
+        for (String project : content.projectIds().stream().sorted().toList()) {
+            if (wantedProject != null && !wantedProject.equals(project)) continue;
+            for (Map<String, Object> document : content.documents(project, QuestHud.KIND)) {
+                if (!wantedId.equals(String.valueOf(document.get("id")))) continue;
+                QuestHud read = QuestHud.read(document);
+                for (var problem : read.problems()) {
+                    plugin.getLogger().warning("Quest HUD " + project + ":" + wantedId + ", " + problem.path()
+                            + ": " + problem.code() + (problem.detail().isEmpty() ? "" : " (" + problem.detail() + ")")
+                            + ": that layer is left out.");
+                }
+                reportedMissing.clear();
+                return read;
+            }
+        }
+        plugin.getLogger().warning("tracking.bossbar.hud: no quest_hud '" + ref + "' in the Artisan projects"
+                + " (quest_huds/" + wantedId + ".yaml): the tracked quest stays in the boss bar.");
+        return null;
     }
 
     /** Tells Artisan menus to re-fetch — call after a quest config reload. */

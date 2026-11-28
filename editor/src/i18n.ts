@@ -183,6 +183,17 @@ const en = {
   "stats.offline": "The server must be online to compute these numbers.",
   "stats.notComputed": "These numbers need ArtisanQuests reading its quests from Artisan (content_source: artisan).",
   "stats.day": "d",
+  "hud.kindLabel": "Tracked quest HUD",
+  "hud.collection": "Tracked quest HUDs",
+  "hud.layout": "Layout",
+  "hud.layoutHint": "Drawn at the top of the screen for the quest a player tracks, once tracking.bossbar.hud names this file in config.yml. A player without the resource pack keeps the boss bar.",
+  "hud.texts": "Texts",
+  "hud.textsHint": "MiniMessage with the objective's placeholders: %objective_name%, %objective_progress%, %objective_target%, %quest_name%. Empty: the default shown in grey.",
+  "hud.slot.quest": "Quest",
+  "hud.slot.objective": "Objective",
+  "hud.slot.progress": "Progress",
+  "hud.sample.quest": "The alchemist",
+  "hud.sample.objective": "Brew 3 potions of Night Vision",
 };
 
 type Key = keyof typeof en;
@@ -371,10 +382,23 @@ const fr: Record<Key, string> = {
   "stats.offline": "Le serveur doit être en ligne pour calculer ces chiffres.",
   "stats.notComputed": "Ces chiffres demandent qu'ArtisanQuests lise ses quêtes dans Artisan (content_source: artisan).",
   "stats.day": "j",
+  "hud.kindLabel": "HUD de la quête suivie",
+  "hud.collection": "HUD de la quête suivie",
+  "hud.layout": "Disposition",
+  "hud.layoutHint": "Dessiné en haut de l'écran pour la quête que le joueur suit, dès que tracking.bossbar.hud nomme ce fichier dans config.yml. Un joueur sans le pack de ressources garde la bossbar.",
+  "hud.texts": "Textes",
+  "hud.textsHint": "MiniMessage avec les placeholders de l'objectif : %objective_name%, %objective_progress%, %objective_target%, %quest_name%. Vide : le texte par défaut, en gris.",
+  "hud.slot.quest": "Quête",
+  "hud.slot.objective": "Objectif",
+  "hud.slot.progress": "Progression",
+  "hud.sample.quest": "L'alchimiste",
+  "hud.sample.objective": "Préparer 3 potions de vision nocturne",
 };
 
 export const LABELS = { en: en.kindLabel, fr: fr.kindLabel };
 export const COLLECTION_LABELS = { en: en.collection, fr: fr.collection };
+export const HUD_LABELS = { en: en["hud.kindLabel"], fr: fr["hud.kindLabel"] };
+export const HUD_COLLECTION_LABELS = { en: en["hud.collection"], fr: fr["hud.collection"] };
 
 export const useT = createModuleI18n<Key>({ en, fr });
 export type T = ReturnType<typeof useT>;
