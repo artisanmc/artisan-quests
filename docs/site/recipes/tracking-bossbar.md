@@ -26,7 +26,7 @@ a background image, an icon, the objective and its count in colour.
 
 1. In the editor, under **Tracked quest HUDs** of the `quests` project, create one (`tracked`).
    It starts as one centred line, the objective followed by its count
-   (`<white>%objective_name% <gray>[<yellow>%objective_progress%<gray>/%objective_target%]`).
+   (`<white>{objective_name} <gray>[<yellow>{objective_progress}<gray>/{objective_target}]`).
    Lay it out with the mouse: add your images (a background, an icon), and the **Quest** or
    **Progress** texts if you want them on a line of their own. Keep the count in the
    objective's line when it should follow the name: a text layer has a fixed place, the name

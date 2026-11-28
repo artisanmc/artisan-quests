@@ -1,6 +1,6 @@
 import { readOverlayLayout } from "@artisan/editor-sdk";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TEXTS, HUD_START, HUD_START_TEXTS, type QuestHud, hudPackImages, hudPreview, parseHud, serializeHud } from "./hud";
+import { DEFAULT_TEXTS, HUD_START, HUD_START_TEXTS, type QuestHud, hudPackImages, hudPreview, parseHud, sampleText, serializeHud } from "./hud";
 
 const ctx = { projectId: "quests", lang: "en" };
 
@@ -47,6 +47,12 @@ describe("quest_hud", () => {
     const { layers, problems } = readOverlayLayout(HUD_START);
     expect(problems).toEqual([]);
     expect(layers.map((l) => l?.kind)).toEqual(["text"]);
-    expect(HUD_START_TEXTS.objective).toContain("%objective_progress%");
+    expect(HUD_START_TEXTS.objective).toContain("{objective_progress}");
+  });
+
+  it("fills {variables} as the field inserts them, and the older %placeholders%", () => {
+    expect(sampleText("{objective_name} %objective_target% {other}", { objective_name: "Kill", objective_target: "3" })).toBe(
+      "Kill 3 {other}",
+    );
   });
 });

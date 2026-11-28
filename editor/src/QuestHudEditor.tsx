@@ -26,6 +26,8 @@ export function QuestHudEditor({ projectId, documentId, document }: DocumentEdit
     objective_target: "3",
     objective_progress_percent: "0%",
   };
+  // Offered on `{` in each text, with the sample the composer shows (SDK 1.25).
+  const variables = Object.entries(sample).map(([path, value]) => ({ path, sample: value }));
   const setText = (slot: HudSlot, value: string) => {
     const texts = { ...hud.texts };
     if (value.trim() === "") delete texts[slot];
@@ -58,6 +60,7 @@ export function QuestHudEditor({ projectId, documentId, document }: DocumentEdit
               value={hud.texts[slot] ?? ""}
               placeholder={hudText({ ...hud, texts: {} }, slot)}
               onChange={(value) => setText(slot, value)}
+              variables={variables}
               aria-label={t(`hud.slot.${slot}`)}
             />
           </div>
