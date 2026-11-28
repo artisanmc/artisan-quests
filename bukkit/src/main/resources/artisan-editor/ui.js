@@ -3039,8 +3039,8 @@ function Ta({ projectId: e, documentId: t, document: n }) {
       /* @__PURE__ */ r("span", { className: "aq-h", children: s("hud.texts") }),
       /* @__PURE__ */ r("span", { className: "aq-hint", children: s("hud.textsHint") }),
       ae.map((c) => (
-        // biome-ignore lint/a11y/noLabelWithoutControl: the control is the child
-        /* @__PURE__ */ f("label", { className: "aq-field", children: [
+        // A div, not a label: a label hands a click in the text to the toolbar's Bold button.
+        /* @__PURE__ */ f("div", { className: "aq-field", children: [
           /* @__PURE__ */ r("span", { className: "field-label", children: s(`hud.slot.${c}`) }),
           /* @__PURE__ */ r(
             Se,

@@ -51,8 +51,8 @@ export function QuestHudEditor({ projectId, documentId, document }: DocumentEdit
         <span className="aq-h">{t("hud.texts")}</span>
         <span className="aq-hint">{t("hud.textsHint")}</span>
         {HUD_SLOTS.map((slot) => (
-          // biome-ignore lint/a11y/noLabelWithoutControl: the control is the child
-          <label key={slot} className="aq-field">
+          // A div, not a label: a label hands a click in the text to the toolbar's Bold button.
+          <div key={slot} className="aq-field">
             <span className="field-label">{t(`hud.slot.${slot}`)}</span>
             <MiniMessageInput
               value={hud.texts[slot] ?? ""}
@@ -60,7 +60,7 @@ export function QuestHudEditor({ projectId, documentId, document }: DocumentEdit
               onChange={(value) => setText(slot, value)}
               aria-label={t(`hud.slot.${slot}`)}
             />
-          </label>
+          </div>
         ))}
       </section>
     </div>
