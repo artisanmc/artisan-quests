@@ -329,6 +329,51 @@ class QuestRowsTest {
     // --------------------------------------------------------------- actives
 
     @Test
+    void activeRowNamesTheObjectiveToDoNext() {
+        Quest quest = ArtisanFixtures.instance(actor, mineStone, QuestStatus.IN_PROGRESS, 34);
+
+        Map<String, Object> row = QuestRows.activeRow(quest, null, TRANSLATOR);
+
+        assertEquals(34, row.get("objective_progress"));
+        assertEquals(64, row.get("objective_target"));
+        assertNotNull(row.get("objective_name"));
+    }
+
+    /** A field the shipped journal reads and the row does not carry would render as empty text. */
+    @Test
+    void theJournalMenuReadsOnlyFieldsOfTheActiveRow() throws Exception {
+        Quest quest = ArtisanFixtures.instance(actor, mineStone, QuestStatus.IN_PROGRESS, 34);
+        Map<String, Object> row = QuestRows.activeRow(quest, null, TRANSLATOR);
+        String menu;
+        try (java.io.InputStream in = getClass().getClassLoader().getResourceAsStream(
+                MsQuestsArtisanModule.SYSTEM_ROOT + "/" + MsQuestsArtisanModule.SYSTEM_FILES.getFirst())) {
+            menu = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+
+        assertTrue(menu.contains("ref: \"" + MsQuestsArtisanModule.ACTIVE + "\""), "reads the active quests");
+        java.util.regex.Matcher field = java.util.regex.Pattern.compile("\\bq\\.([a-z_]+)").matcher(menu);
+        int read = 0;
+        while (field.find()) {
+            assertTrue(row.containsKey(field.group(1)), "quests:active has no field '" + field.group(1) + "'");
+            read++;
+        }
+        assertTrue(read > 0);
+    }
+
+    @Test
+    void slashQuestsOpensTheJournalOfTheModulesFolder() {
+        var command = MsQuestsArtisanModule.journalCommand();
+
+        assertEquals("quests", command.getName());
+        assertEquals("quests:journal", command.getOpensMenu());
+        assertEquals("artisanquests.journal", command.getPermission());
+        var template = net.artisanmc.modules.api.template.TemplateDeclaration.fromResources(
+                getClass().getClassLoader(), MsQuestsArtisanModule.SYSTEM_ROOT, MsQuestsArtisanModule.SYSTEM_TEMPLATE,
+                MsQuestsArtisanModule.SYSTEM_VERSION, MsQuestsArtisanModule.SYSTEM_FILES).system().build();
+        assertEquals(java.util.List.of("menus/journal.yaml"), template.getPaths());
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void activeRowExposesStagesAndObjectives() {
         Quest quest = ArtisanFixtures.instance(actor, mineStone, QuestStatus.IN_PROGRESS, 34);

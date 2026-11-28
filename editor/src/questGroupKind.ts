@@ -3,14 +3,13 @@ import { textValue } from "@artisan/editor-sdk";
 import { QuestGroupEditor } from "./QuestGroupEditor";
 import { COLLECTION_LABELS, LABELS } from "./i18n";
 import { QuestIcon } from "./icon";
-import { QUEST_ACCENT, questBoardItems, questBoardSummary } from "./questBoard";
+import { QUEST_ACCENT, plainText, questBoardItems, questBoardSummary } from "./questBoard";
 import {
   DIR,
   KIND,
   QUESTS_FOLDER,
   type QuestGroup,
   SCHEMA,
-  newUid,
   parseQuestGroup,
   questGroupTextSites,
   serializeQuestGroup,
@@ -30,12 +29,17 @@ export const questGroupKind: DocumentKindContribution = {
   labels: LABELS,
   icon: QuestIcon,
   component: QuestGroupEditor,
-  title: (doc, { project, lang }) => textValue(project, (doc as QuestGroup).title.key, lang),
+  // The view is a page of its own: its cards, and the quest beside what the player sees.
+  ownHeader: true,
+  wide: true,
+  title: (doc, { project, lang }) =>
+    plainText(textValue(project, (doc as QuestGroup).title.key, lang)),
+  // The sidebar reads "Niveaux de guilde", the file's id stays in the group's settings.
+  listByTitle: true,
   create: ({ id, projectId }) =>
     ({
       id,
       projectId,
-      uid: newUid(),
       // Empty keys: the host mints them at their canonical address.
       title: { key: "" },
       description: { key: "" },

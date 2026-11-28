@@ -39,13 +39,14 @@ The plugin is called `ArtisanQuests` (`name:` in `plugin.yml`). The code keeps t
 | Plugin name | `ArtisanQuests` | `MSQuests` through `provides:` (`depend: [MSQuests]` still resolves) |
 | Data folder | `plugins/ArtisanQuests/` | `plugins/MSQuests/` copied on first start (`LegacyDataFolderMigration`); the original is kept for a rollback |
 | Admin command | `/artisanquests` | `/msquests` |
-| Permissions | `artisanquests.player`, `.rotate`, `.admin` | `msquests.player`, `.rotate`, `.admin`, `msquests.*`: declared in `plugin.yml` with the new node as a child, so a LuckPerms group that grants them keeps its rights |
+| Permissions | `artisanquests.player`, `.rotate`, `.admin` (and `.journal`, new, for `/quests`) | `msquests.player`, `.rotate`, `.admin`, `msquests.*`: declared in `plugin.yml` with the new node as a child, so a LuckPerms group that grants them keeps its rights |
 | Jar | `artisanquests-<version>.jar` | |
 
-Unchanged on purpose: the Artisan module id and Presence `msquests`, its data sources
-`msquests:groups`, `:quests`, `:active` and commands `msquests:track`, `:rotate`, `:contribute`
-(menus and chains on servers reference them), the `%msquests_*%` PAPI alias, the zMenu button
+Unchanged on purpose: the Artisan module id and Presence `msquests`, its commands
+`msquests:track`, `:rotate`, `:contribute` (menus and chains on servers reference them), the `%msquests_*%` PAPI alias, the zMenu button
 type `MSQUESTS_QUEST_GROUP` and the `msquests_*` tables (a table name is never visible).
+The data sources are named `quests:*`; each keeps its `msquests:*` name as an alias (Artisan
+API 1.2.0), there for menus written before the rename and due to be removed.
 
 Both jars must not sit in `plugins/` together: `provides: [MSQuests]` would clash with the old
 plugin.
@@ -89,11 +90,12 @@ Root package: `com.github.ibanetchep.msquests.database`
 | `DbAccess` | HikariCP connection pool, JDBI instance, single-thread executor |
 | `DbCredentials` | Configuration record (H2 or MySQL) |
 | `MigrationManager` | Sequential migration system with a `schema_version` table |
-| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables) |
+| `migrations/` | `CreateTablesMigration` (v1), `AddRotationTableMigration` (v2), `CreateArtisanTablesMigration` (v3, `artisan_quests_*` tables), `CreateImportMapMigration` (v4, `artisan_quests_import_map`), `AddReachedStageMigration` (v5, `artisan_quests_quest.reached_stage`), `CreateKeyChangeLedgerMigration` (v6, `artisan_quests_key_change`) |
 | `SqlTables` | Table names of a layout: `LEGACY` (`msquests_*`) or `ARTISAN` (`artisan_quests_*`) |
 | `LegacyDataCopier` | One-time transactional copy from `msquests_*` to `artisan_quests_*` (see *Content source*) |
 | `repository/` | `SqlRepository` (async base), SQL implementations for Quest, PlayerProfile, Actor, Rotation; `ArtisanQuestSqlRepository` for `artisan_quests_quest/objective` |
 | `RecordRowMapper` | Generic JDBI mapper for Java records |
+| `ImportLedger` | `artisan_quests_import_map`: what an import wrote, and the quest rows it writes and a rollback removes (see *Imports*) |
 
 **Main schema:**
 ```
@@ -110,10 +112,21 @@ artisan_quests_quest     (id, quest_uid, quest_key, group_key, status, actor_id 
 artisan_quests_objective (quest_id FK, stage_key, objective_key, status, type, progress) -- composite PK
 artisan_quests_rotation  (actor_id, group_uid, rotated_at)
 artisan_quests_data_copy (one row once the copy is done)
+
+-- v4
+artisan_quests_import_map (source, source_id, target, batch, imported_at) -- PK (source, source_id)
+
+-- v5
+artisan_quests_quest.reached_stage  -- key of the stage the quest stood on at its last save, NULL before
+
+-- v6
+artisan_quests_key_change (from_group, from_key, to_group, to_key, applied_at) -- PK (from_group, from_key); from_key '' for a group
 ```
 
-`quest_key` / `group_key` of `artisan_quests_quest` are only the last recorded
-names (logs, support): a row is resolved by `quest_uid`.
+A row of `artisan_quests_quest` is resolved by `(group_key, quest_key)`, and a rotation by
+the group key (the column is still named `group_uid`). A save never changes these names:
+only a key change does (see *Content source*, *Identity and key changes*). `quest_uid` is the uid of
+a Document that still carries one, else empty; nothing is resolved by it.
 
 ### `bukkit/` - Paper integration
 
@@ -182,11 +195,12 @@ is registered and declares:
 
 | Action | Arguments | Effect |
 |---|---|---|
-| `quests:start` | `group`, `quest` | Starts the quest for the player's actor, with the group's rules (limits, requirements) |
+| `quests:start` | `group`, `quest` | Starts the quest for the player's actor, with the group's rules (limits, requirements); names it in chat and tracks it when the player tracks no quest still in progress |
 | `quests:abandon` | `group`, `quest` | Abandons the active instance: it becomes `FAILED` and still counts in the period; if tracked, it no longer is |
 | `quests:track` | `group`, `quest` | Tracks / untracks the active instance (like `msquests:track`) |
 | `quests:rotate` | `group`, `quest` | Swaps the active instance for another one of the group |
 | `quests:complete` | `group`, `quest` | Completes the active instance, rewards included |
+| `quests:advance` | `group`, `quest`, `objective` | Validates an objective bound to an NPC on the active instance: a `talk_npc` completes, a `deliver_item` with an `npc` takes the whole missing amount or nothing |
 | `quests:distribute` | `group` (primary), `amount?` | Distributes `amount` quests, otherwise applies the group's distribution |
 | `quests:action_bar` | `text` (primary, ltext) | Shows the text in the action bar (Artisan's core has none) |
 | `quests:boss_bar` | `text` (primary), `color`, `style`, `show_progress`, `duration` | Per-player boss bar, updated in place, hidden `duration` s after the last call; filled with the chain's `progress_ratio` |
@@ -215,7 +229,7 @@ reacts to a quest without a hook in its group.
 | `quests:expired` | same | its duration or its period ran out |
 | `quests:abandoned` | same | `quests:abandon` (status `FAILED`) |
 
-`group`, `quest`, `stage` and `objective` are the keys an author writes, never the uids.
+`group`, `quest`, `stage` and `objective` are the keys an author writes.
 A quest belongs to an actor: the event fires once for each online member, on the thread
 that owns that player (the lifecycle hops to the server thread to read the members first).
 Nothing is read or scheduled while no listener observes the event. A cancelled core event
@@ -312,19 +326,21 @@ Placeholders: `QuestPlaceholders` is registered in Artisan's `PlaceholderRegistr
 (namespace `quests`, exposed to PAPI); `%msquests_*%` stays as a PAPI alias (C7). New
 keys `status_<group>:<quest>` and `completed_<group>:<quest>`.
 
-The data sources and commands below remain (`msquests:*` alias, C7):
+The data sources and commands below remain. A source is named `quests:*` and still answers to
+its former `msquests:*` name, an alias the editor does not list (C7):
 
 | Data source | Stability | Content |
 |---|---|---|
-| `msquests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
-| `msquests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
-| `msquests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
+| `quests:groups` | STATIC (`key`) | Quest groups + the actor's counters, nested `quests[]` |
+| `quests:quests` | STATIC (`id` = `group:key`) | Full catalog: config + `stages[] > objectives[]`, with the actor's progress laid over it |
+| `quests:active` | DYNAMIC | The actor's ongoing instances, objective by objective |
+| `quests:npc` | DYNAMIC | What the quests expect from NPCs for the player (see *Quests and NPCs*) |
 
 Three parameters, common to the three sources:
 
 - `player` — target a player other than the one opening the menu (by name, must be online)
 - `actor` — which actor to read: `player` (default), `global`, or any other registered type
-- `group` — restrict to one group (`msquests:quests`, `msquests:active`)
+- `group` — restrict to one group (`quests:quests`, `quests:active`)
 
 `ActorResolver` (in `core/registry/`) resolves (player, actor type) via
 `QuestActor#isMember`, never by identity: a future guild actor works without
@@ -336,7 +352,7 @@ attempt at this quest" (active instance, otherwise the most recent non-expired o
 period). It is the question every display surface asks; it is
 resolved once, in the domain.
 
-**Catalog = config + progress laid over it.** `msquests:quests` is keyed on the
+**Catalog = config + progress laid over it.** `quests:quests` is keyed on the
 **configs**, not on the instances: all the quests of a group appear, started
 or not, and the player's state is laid over them. A quest never started therefore still
 exposes its stages, its objectives (with their target) and its rewards, at zero
@@ -352,7 +368,7 @@ menu previews the draft before any deploy. The definition fields (titles, limits
 objectives and their targets) come from the draft; the player's fields (status, progress,
 counters, `period_end`) from the server's rows, matched by key (`ctx.serverRows`, Artisan editor
 SDK 1.12). A quest the draft adds shows the neutral state, one it removes disappears; an
-instance of `msquests:active` whose quest is gone from the draft is dropped. Of an attempt, only
+instance of `quests:active` whose quest is gone from the draft is dropped. Of an attempt, only
 what the server stores is taken (each objective's progress and COMPLETED/FAILED status, by
 objective key): completion, ratios, the current stage and objective are derived again over the
 draft with the domain's rules, so a lowered target or a removed stage previews as the server will
@@ -360,11 +376,20 @@ show it after the deploy. An objective keeps
 the server's name while its type and target are unchanged, otherwise it is named from the
 default `objective.<type>` texts (an admin's own wording in `lang/` shows after a deploy). The
 `group` parameter narrows the rows like the fetcher (`ctx.params`). An older editor passes no
-context: groups and quests show the draft at neutral state, `msquests:active` the server.
+context: groups and quests show the draft at neutral state, `quests:active` the server.
 `testdata/sources/*.json` pins the definition fields both sides must produce, and stored
 attempts laid over the document:
 `QuestSourceVectorsTest` (plugin) and `sourceRows.test.ts` (editor) read the same files.
 The bundle still declares SDK 1.10, so it loads on an older Artisan.
+
+**Quest journal.** `/quests` (player command `msquests:journal`, permission
+`artisanquests.journal`, granted to everyone) opens the menu `quests:journal`: the quests in
+progress from `quests:active`, the tracked one glowing, a click tracks or untracks
+(`quests:track`). The menu ships as a system file (`artisan-templates/system/menus/journal.yaml`,
+template `quests_files`): Artisan keeps it in the module's folder, where the admin edits it in the
+editor, and writes the command as `commands/quests.yml` (name, aliases, permission). An active row
+carries `objective_name`, `objective_progress` and `objective_target`, the objective to do next,
+so the journal names it without walking `stages`. Raise `SYSTEM_VERSION` when the menu changes.
 
 Three commands callable from a menu button: `msquests:track <id>` (toggle),
 `msquests:rotate <id>` and `msquests:contribute <id>`, where `<id>` is either an instance's UUID
@@ -426,18 +451,13 @@ QuestConfig         Quest              QuestStage           QuestObjective
                     (EXPIRED)    <--- duration/cron expiry
 ```
 
-1. **Distribution**: `QuestDistributionService` selects the candidate quests (SEQUENTIAL or RANDOM strategy with tiers)
+1. **Distribution**: `QuestDistributionService` selects the candidate quests (RANDOM strategy with tiers). A SEQUENTIAL group (`ladder` in a file is the same) is not distributed but synchronised (`QuestLifecycleService.syncLadder`): the first quest not done, by its `completed_when` when it has one, else by its attempts (`LadderSteps`, Artisan conditions with the actor's values bound, `ConditionLadderSteps`) is the only active one, on actor load, after a completion's rewards, on the one-minute refresh and when `quests:quests` is read; `QuestRows` derives `status_key` from it
 2. **Start**: `QuestLifecycleService.startQuest()` validates the preconditions (`QuestStartResult`) and creates the instance
 3. **Progress**: Bukkit handlers detect game events -> `QuestProgressService.progressObjective()` with batching
 4. **Objective completion**: When `progress >= target`, the objective is completed, the objective actions run
 5. **Stage completion**: When all the stage's objectives are completed, the next stage activates
 6. **Quest completion**: When the last stage is completed, the reward actions run
 7. **Expiration**: `QuestLifecycleService.expireQuests()` checks `shouldExpire()` (duration or cron)
-   when an actor loads. At each reset of a group with a reset cron, `CronDistributionService` expires
-   its quests in memory for the loaded actors and in storage for all the others
-   (`QuestRepository.expireInProgress`: IN_PROGRESS rows created before the reset); its first tick
-   catches up on the last reset. A quest expired in storage records no `quests:expired` event (its
-   actor is not loaded, nobody to record it for).
 8. **Rotation**: `rotateQuest()` replaces an active quest with another candidate of the same group
 
 ### Actor types
@@ -509,7 +529,7 @@ In-memory storage with `ConcurrentHashMap` for thread safety:
 | `QuestRegistry` | `UUID` | `Quest` | All the active quests in memory |
 | `QuestActorRegistry` | `UUID` | `QuestActor` | Loaded actors (connected players + global) |
 | `PlayerProfileRegistry` | `UUID` | `PlayerProfile` | Connected player profiles |
-| `ActorTypeRegistry` | `String` (type name) | `Class<? extends QuestActor>` | Registered actor types |
+| `ActorTypeRegistry` | `String` (type name) | `Class<? extends QuestActor>` | Registered actor types; reported to the editor as the option list `quests:actor_types` (`MsQuestsArtisanModule.registerActorTypes`, Artisan API 1.4.0), again at each registration |
 
 ---
 
@@ -563,10 +583,38 @@ Each objective type follows a 3-class pattern + registration:
 | `breed_animal` | `EntityBreedEvent` | entity type |
 | `deliver_item` | `msquests:contribute` (menu) | item (`item` + `match`, legacy `material`), amount — inventory then carried shulkers (`deliver_item.include_shulker_boxes` in config.yml) |
 | `harvest_crop` | `BlockBreakEvent` | crop type |
+| `talk_npc` | none: `quests:advance` (an NPC module) | `npc`, `conversation?` |
 
 An objective's **item** (`ItemTarget`) is an Artisan item spec: the fields of a menu button's appearance (`material`: vanilla, `item:<captured id>` or `nexo:<id>`…; `title`, `lore`, `enchants`, `custom_model_data`), built and compared by `api.getItems()`. `match` lists the criteria (`material`, `custom_item`, `name`, `lore`, `enchants`, `custom_model_data`, `damage`, `exact`); absent, those the item carries. A legacy bare material is compared on the material alone, and is rewritten as `item` + `match: [material]` on save. No item: any item.
 | `placeholder` | Polling scheduler | placeholder, interval, condition |
 | `travel` | `PlayerMoveEvent` | distance |
+
+### Quests and NPCs
+
+The quests hold no NPC: they name one by id, and an NPC module (`artisan-npcs`) decides what a
+click does. Three places name an NPC, all in the quest:
+
+- `giver: {npc, conversation?, line?}` on a quest: the NPC that hands it out;
+- a `talk_npc` objective: `npc`, `conversation?`, `line?`;
+- a `deliver_item` objective with `npc`, `conversation?` and `missing?` (the conversation played
+  while the player does not carry the whole amount), `line?` and `missing_line?`. Without `npc` it
+  stays delivered from a menu.
+
+A `line` is what the NPC says, written in the quest: a text, or one per language
+(`{fr: …, en: …}`), kept as written. It spares a conversation file for a single sentence; the NPC
+module has it said by the NPC's speaker (`conversations:say`). A conversation named beside it wins.
+
+`quests:npc` (`QuestNpcs`, alias `msquests:npc`; parameters `npc?` and `player?`) answers for one player, in the order
+an NPC should consider them: the objectives in progress bound to an NPC (`kind: objective`, oldest
+quest first, objective conditions applied), then the quests a giver may start now (`kind: offer`,
+`canStartQuest`). Each row carries `npc`, `group`, `quest`, `objective`, `objective_type`, `ready`
+(false for a delivery whose items are not all carried), the `conversation` to play (`missing`
+when not ready, empty when none) and the `line` to say (`missing_line` when not ready, empty when none). The NPC module starts an offer with `quests:start` and validates
+an objective with `quests:advance`. A delivery to an NPC is all or nothing: the inventory is counted
+again at validation, nothing is taken while the amount is short.
+
+A quest with a giver in a group that also distributes automatically can be handed out by the draw
+before the player meets the NPC; the editor warns about it and the server allows it.
 
 ---
 
@@ -608,17 +656,68 @@ Read at startup only; a change requires a restart (`/msquests reload` points it 
 | `content_source` | Content | Progress |
 |---|---|---|
 | `legacy` (default) | `quests/*.yml` | `msquests_*`, by `(group_key, quest_key)` |
-| `artisan` | `<project>/quest_groups/<group>.yaml` of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `uid` |
+| `artisan` | `<project>/quest_groups/<group>.yml` (or `.yaml`, the `.yml` copy wins) of all Artisan projects (`quest_group/v1` Documents) | `artisan_quests_*`, by `(group key, quest key)` |
 
-A Document carries an immutable `uid` (ULID) for the group and for each quest; the group
-key is the file name, renamable like quest keys without losing progress.
+The group key is the file name and a quest is identified by its key in the group: a file
+written by hand needs nothing else (see *Identity and key changes* below).
 `QuestGroupDocumentReader` produces the same `QuestGroupConfigDTO` as the YAML reader (`ltext`
 texts resolved in the manifest's `default_lang`, `duration` as `24h`/`90m`, cron with
 `reset.timezone`) and rejects the whole file on an error, with the path of the faulty value first:
-missing or already taken `uid` (server-wide), repeated objective key in a
+a `uid` already taken (server-wide), an `old_key` that is still a key, repeated objective key in a
 quest, etc. A group key is unique on the server, since commands and placeholders
 name a group by its key alone: two projects carrying `daily.yaml` are reported with both
 paths, and neither loads (a reload is then refused as a whole). Actions and conditions keep the MSQuests format for now (`type: ...`).
+
+#### Identity and key changes
+
+A quest's identity is `(group key, quest key)`, in the file and in the database alike. A key
+is an identifier, not a name (what players read is the `title`, free to change), so changing
+one is rare. A group or quest whose key changed keeps its progress by saying what the key
+was: `old_key` (one key or a list) on the group or on the quest.
+`QuestGroupDocumentReader.keyChanges` turns a Document's former keys into `KeyChange`s, `QuestConfigLoad` carries those of the groups that
+loaded, and `QuestConfigService` hands them to `KeyChangeRepository` **before** publishing
+the groups, at startup and on every reload (which rebuilds the actors from the database
+right after):
+
+| `KeyChange` | From | Moves |
+|---|---|---|
+| `Group(from, to)` | the group's `old_key` | `group_key` of its quest rows, its rotations |
+| `Quest(group, from, to)` | a quest's `old_key` | `quest_key` of its rows |
+| `GroupUid(uid, group)` | the group's `uid` | rotations stored under the uid |
+| `QuestUid(uid, group, quest)` | a quest's `uid` | the keys of the rows whose `quest_uid` is that uid |
+
+`KeyChangeSqlRepository` applies them in one transaction (groups, then uids, then quests).
+A change of key is applied **once per database** and written to `artisan_quests_key_change`
+(one row per former place, a group or a quest of a group, with what it became). Found there,
+it moves nothing, which is why `old_key` may stay in the file. Rows that appear under the
+former key afterwards were written by a server of the network that still loads the content
+from before the change (the actor has no such quest there any more, so it hands them a new
+one): adding them would give the actor the same quest twice, so they stay where they are and
+each load logs how many are ignored (`KeyChangeRepository.Left`). What a player does on such a
+server between the two publications is therefore lost: the content of a group is to be
+published on every server that runs it. A place that becomes a key again can be left again
+(taking a key forgets that it was left), a change towards another destination than the one
+written is a new one, and a later change of the same quest (`old_key: [mine, dig]`) does not
+reopen the first. The rows a `uid` points to are outside that table and move whenever some
+are found elsewhere. The repository first reads the keys in use (one pass per table) and runs
+a statement only for a former key some row carries. If the move fails, a reload is refused as
+a whole; at startup the groups that declare a former key are skipped, so none starts over next
+to progress it cannot find.
+
+`uid` is what identified groups and quests before: optional now, and read as one more former
+key, so a server whose rows were keyed by uid moves them onto the keys at its first load,
+with no step to run. The editor no longer writes one (it keeps those a file has) and writes
+`old_key` when a quest's key changes. `/msquests migrate` writes none either, and
+`LegacyDataCopier` copies the rows under their keys. The BeautyQuests import still writes
+uids (derived from the BeautyQuests id), which load like any older Document.
+
+The reader refuses a Document whose `old_key` is still the key of a quest of the group (or,
+for a group, of a group of the server), or is claimed twice: the rows would go to the wrong
+quest. A group key holds at most 64 characters, the width of `artisan_quests_rotation.group_uid`.
+
+Not covered: the statistics events already recorded keep the former key (`group`, `quest`
+dimensions), and going back to a jar that resolves rows by uid loses the rotations counted
+since (their uid was replaced by the key) and the rows of Documents without a uid.
 
 Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
 
@@ -627,14 +726,117 @@ Moving a server over (no step touches `quests/*.yml` or `msquests_*`):
    `migration/report-<date>.txt`. Nothing else is written.
 2. `/msquests migrate --confirm`: writes the missing Documents into the `quests` module folder
    (`plugins/Artisan/modules/quests/`, created if missing; never over
-   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (`(group, key) -> uid`, `objective -> stage`). Re-run,
-   it keeps the same `uid`s.
+   an existing Document), reloads Artisan's projects, and writes `migration/map.yaml` (the groups and quests converted, `objective -> stage`).
+   The Documents carry no `uid`; a `uid` an earlier version of the migration wrote (in the map or in
+   a Document) is kept and copied along, so that run still matches. Re-run, it finds a Document
+   whose file name changed since by its `old_key`.
 3. `content_source: artisan` then restart: before any loading, `LegacyDataCopier`
    copies `msquests_*` into `artisan_quests_*` in one transaction (counts verified, otherwise
    rollback), only once. Without `map.yaml` while `msquests_quest` has rows, the
    plugin refuses to start.
 4. `/msquests stats` before and after to compare. Rollback: `content_source: legacy`
    or the old jar; progress made in the meantime stays in `artisan_quests_*`.
+
+#### Content changed under a quest in progress
+
+A stored quest is rebuilt from the content of the moment each time its actor loads
+(`QuestFactory.buildQuest`): each objective takes the progress stored under its key. What the
+actor did or passed stays theirs, whatever the content becomes:
+
+- **An objective completed once stays completed** (`AbstractQuestObjective.isCompleted`): its
+  stored status wins over a target raised afterwards. A target lowered under the progress
+  completes it.
+- **A stage passed stays passed** (`QuestStage.isPassed`): a save records the stage the quest
+  stands on (`artisan_quests_quest.reached_stage`), and the stages that come before it in the
+  content are behind the actor. A stage inserted before it, an objective added to a finished
+  stage, or stages reordered do not send them back; an actor who has not reached the place
+  yet does the new stage. The legacy `msquests_quest` table records no stage: there the
+  current stage stays the first one with an objective left. When the stage recorded is gone, the current stage is the first one
+  with an objective left. A row from before the column gets it at its first load.
+- **What a change of content completed is settled when the actor loads**
+  (`QuestLifecycleService.settleLoadedQuests`, called by `QuestActorService.loadActor`): a quest
+  otherwise only reacts when one of its objectives completes in play. An objective whose progress
+  reached a lowered target gets its completion (event, `objective_complete` actions, the stage's
+  event once); a quest with nothing left is completed, rewards included. An objective stored as
+  completed is never run again.
+- **An objective's progress follows its key and its type** (`QuestFactory.stored`): read under its
+  key, else under one of its `old_key` (one key or a list, on the objective; the next save writes
+  it under the current key, no row is moved); a row stored for another objective type is ignored,
+  the objective starts from zero. The reader refuses an objective `old_key` that is still an
+  objective of the quest or is claimed twice.
+- **A quest moved to another group keeps its rows** when it says where it was: `old_key:
+  { group: story, key: mine }` on the quest gives a `KeyChange.QuestMoved`, applied with the
+  other key changes. `QuestGroupDocumentRepository` drops the group whose quest claims a place
+  that is still a quest, or one already claimed.
+- **In a `sequential` group, a step without `completed_when` added behind the actor counts as
+  done** (`ladderIndex`): the quest in progress is not dropped for it.
+- **A quest in progress whose config left its group keeps its active slot**
+  (`ActorQuestGroup.getHeldSlots`): its row is ignored, not its place, so no extra quest is
+  handed out meanwhile.
+
+`QuestContentChangeTest` holds one test per kind of change. Its `harmful…` tests pin what is
+still lost or wrong: a key changed without `old_key` (objective, or quest moved to another
+group), the row of a dropped objective key found again when a later objective of the same type
+reuses the key, and a reset added to a group that had none. The editor writes an objective's
+`old_key` when its key changes (`objectiveOut` in `editor/src/model.ts`). The editor's
+preview follows the same rules (`editor/src/sourceRows.ts`, vectors in `testdata/sources/`).
+
+
+#### What a change does, said before it is published
+
+The rules above are applied silently at the next load. `core/impact` reads them ahead, so the
+author is told before publishing: `ContentImpact.of(before, after, key changes, claimed places,
+ImpactSource)` compares the group the server loaded with the one about to be published and
+returns `Impact`s, each a loss (actors lose something they had) or a notice (they move on, or
+content added behind them is not asked of them), with how many quests in progress it touches.
+`ImpactSource` counts (`QuestImpactSqlSource`: three grouped reads of `artisan_quests_quest`
+and `artisan_quests_objective`), `ImpactMessages` holds the sentence of each code in English
+and French.
+
+| Code | Loss | Said when |
+|---|---|---|
+| `group.removed` | yes | the file is deleted and no other group names it in `old_key` |
+| `quest.removed`, `quest.replaced` | yes when in progress | a quest key is gone and nothing claims it; `replaced` when exactly one quest is gone and one is new (a key changed by hand: the sentence says to write `old_key`) |
+| `objective.replaced`, `objective.type_changed` | yes | an objective key gone and a new one of the same type on the same stage, or a type changed under the same key |
+| `group.renamed`, `quest.renamed`, `quest.moved` | no | `old_key` moves the progress (once per database) |
+| `objective.target_raised`, `objective.target_lowered`, `objective.added`, `objective.removed` | no | who has more to do, who completes at the next load |
+| `stage.added`, `stage.removed`, `stage.removed_last` | no | who is past it, who moves on or completes the quest |
+| `group.reset_added` | no | a reset on a group that had none: earlier completions stop counting |
+
+`QuestGroupChangeCheck` (`bukkit/document`) wraps it for a `quest_group` Document: the file the
+reader refuses is a problem, the rest are the impacts in the author's language. It is free of
+Artisan's types; `QuestGroupDeployCheck` hands it to `DocumentChangeCheck` (the Deploy review)
+when the server's Artisan has API 1.9.0 (`MsQuestsArtisanModule.groupKind`). On an older
+Artisan the kind is declared without it and a deployment says nothing, as before. One test per code in `ContentImpactTest`.
+
+In the editor, changing the key of a quest the file already has asks what becomes of the
+progress (`undecidedKey`, `chooseKeyChange` in `editor/src/model.ts`): keep it (`old_key` is
+written) or start from zero (the quest counts as new). Unanswered, the file is written as
+"keep": nothing is lost by omission.
+
+### Imports from other quest plugins
+
+`MsQuestsArtisanModule` registers the source `msquests:beautyquests` with Artisan's import contract
+(Artisan ADR `data-imports`, API 1.7.0; the source's namespace is the module id). Code in
+`bukkit/.../importing/`:
+
+| Class | Role |
+|---|---|
+| `BeautyQuestsContent` | quest files → `quest_group/v1` Documents (`beautyquests`, `beautyquests_repeatable`), pure; each quest keeps its BeautyQuests id (`quest_<id>`, uid derived from it) |
+| `BeautyQuestsProgress` | players' data, `players/*.yml` or BeautyQuests' database, 1.0 and 2.x layouts |
+| `BeautyQuestsRows` | one player's progress → the `QuestDTO` row written, pure |
+| `BeautyQuestsImporter` | plan / apply / rollback; blocks unless `content_source: artisan` |
+
+Before writing, each converted group is read back by `QuestGroupDocumentReader` and each objective
+built by the objective factory, as the quest reload does. Files go to the `quests` module folder; the
+ledger keeps `<path>#<sha256>`, and a rollback deletes a file only if its hash still matches. A
+player's quest row is written with its objectives and its ledger row in one transaction
+(`ImportLedger.writeQuest`); the ledger keeps a fingerprint of its status and objectives, and a
+rollback keeps a row a player moved since. Online players are set aside, by the import and by the
+rollback (`player_online`; the list is a snapshot taken once, the run being off the game threads). A
+group already in the ledger is not rewritten: progress is written only for the quests its file on
+disk holds (`quest_not_imported` otherwise). A rollback keeps a group file while imported rows remain
+(`in_use`).
 
 ---
 
@@ -742,23 +944,10 @@ conditions are Artisan's.
 
 ## CI and releases
 
-`.github/workflows/build.yml` builds and tests every PR and uploads the JAR as a run artifact.
-
-`.github/workflows/release.yml` publishes to `repo.artisanmc.net`, like the Artisan API and the
-other add-ons, under the group `net.artisanmc`: `artisan-quests` (the `bukkit` module's plain jar,
-without the shaded libraries), `artisan-quests-core` and `artisan-quests-database`, each with its
-sources and POM. Credentials: the secrets `ARTISAN_REPO_USERNAME` and `ARTISAN_REPO_PASSWORD`.
-
-- Each push to `master` publishes the version of `build.gradle`,
-  a `-SNAPSHOT`, to `/snapshots`.
-- An annotated tag `vX.Y.Z` (`git tag -a v1.0.0 -m "<notes>"`) builds version `X.Y.Z` (injected
-  with `-PpluginVersion`, expanded into `paper-plugin.yml`), publishes it to `/releases` and
-  attaches `artisanquests-X.Y.Z.jar` to a **draft** GitHub release whose notes are the tag's
-  message. Check the draft, then publish it by hand.
-
-An integration plugin (e.g. ArtisanGuildQuests) compiles against
-`net.artisanmc:artisan-quests-core` and `net.artisanmc:artisan-quests` (non-transitive), from
-`https://repo.artisanmc.net/snapshots` or `/releases`.
+`.github/workflows/build.yml` builds and tests on every push to `master` and on every PR, and
+uploads the JAR as a run artifact. A `vX.Y.Z` tag creates a GitHub release with
+`artisanquests-X.Y.Z.jar` (version injected with `-PpluginVersion`, expanded into `plugin.yml`).
+A tag with a dash (`v1.2.0-beta.1`) gives a pre-release.
 
 `artisan-core-api` (version `artisanApiVersion` in `gradle.properties`) comes from
 `https://repo.artisanmc.net/releases` (Artisan's Reposilite), without a token.

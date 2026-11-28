@@ -49,11 +49,15 @@ public class QuestDistributionService {
             return QuestStartResult.ALREADY_ACTIVE;
         }
 
-        if (strategy == QuestDistributionStrategy.SEQUENTIAL && group.hasStarted(questConfig.getKey())) {
+        // In list order, a quest with completed_when follows that state: done before, it is offered
+        // again when the state comes back to it. Without one, a quest started once is behind.
+        boolean stateDriven = strategy == QuestDistributionStrategy.SEQUENTIAL && !questConfig.getCompletedWhen().isEmpty();
+
+        if (strategy == QuestDistributionStrategy.SEQUENTIAL && !stateDriven && group.hasStarted(questConfig.getKey())) {
             return QuestStartResult.ALREADY_COMPLETED;
         }
 
-        if (groupConfig.getMaxPerPeriod() != null && group.hasStartedInCurrentPeriod(questConfig.getKey())) {
+        if (!stateDriven && groupConfig.getMaxPerPeriod() != null && group.hasStartedInCurrentPeriod(questConfig.getKey())) {
             return QuestStartResult.ALREADY_COMPLETED;
         }
 

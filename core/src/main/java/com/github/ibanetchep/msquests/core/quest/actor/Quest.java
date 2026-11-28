@@ -106,6 +106,18 @@ public class Quest implements PlaceholderProvider {
                 .orElse(null);
     }
 
+    /**
+     * What a save records as the stage reached: the current one, else the last one when nothing
+     * is left to do. Null for a quest without stages.
+     */
+    public @Nullable String getReachedStageKey() {
+        QuestStage current = getCurrentStage();
+        if (current != null) return current.getKey();
+        String last = null;
+        for (String key : stages.keySet()) last = key;
+        return last;
+    }
+
     public int getCurrentStageIndex() {
         int index = 0;
 

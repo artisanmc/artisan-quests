@@ -1,5 +1,7 @@
 package com.github.ibanetchep.msquests.core.quest.config;
 
+import java.util.List;
+import java.util.Objects;
 import com.github.ibanetchep.msquests.core.dto.QuestObjectiveConfigDTO;
 import com.github.ibanetchep.msquests.core.lang.PlaceholderProvider;
 import com.github.ibanetchep.msquests.core.lang.Translatable;
@@ -13,11 +15,28 @@ public abstract class QuestObjectiveConfig implements Translatable, PlaceholderP
 
     protected final String key;
     protected final String type;
+    private final List<String> formerKeys;
     private Conditions conditions = Conditions.NONE;
 
     protected QuestObjectiveConfig(QuestObjectiveConfigDTO dto) {
         this.key = dto.key();
         this.type = dto.type();
+        this.formerKeys = formerKeys(dto.params().get("old_key"));
+    }
+
+    /**
+     * The keys this objective had before ({@code old_key}: one key or a list): the progress stored
+     * under one of them is its own, see {@code QuestFactory#buildQuest}.
+     */
+    public List<String> getFormerKeys() {
+        return formerKeys;
+    }
+
+    private static List<String> formerKeys(Object value) {
+        if (value instanceof List<?> items) {
+            return items.stream().filter(Objects::nonNull).map(String::valueOf).toList();
+        }
+        return value == null ? List.of() : List.of(String.valueOf(value));
     }
 
     public void setConditions(Conditions conditions) {

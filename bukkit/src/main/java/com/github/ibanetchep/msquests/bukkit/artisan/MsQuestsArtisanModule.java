@@ -13,6 +13,7 @@ import com.github.ibanetchep.msquests.core.quest.actor.ActorQuestGroup;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
 import com.github.ibanetchep.msquests.core.quest.actor.QuestActor;
 import com.github.ibanetchep.msquests.core.quest.config.QuestConfig;
+import com.github.ibanetchep.msquests.core.quest.config.group.LadderSteps;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestDistributionStrategy;
 import com.github.ibanetchep.msquests.core.quest.config.group.QuestGroupConfig;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
@@ -21,8 +22,12 @@ import com.github.ibanetchep.msquests.core.quest.result.QuestRotateResult;
 import com.github.ibanetchep.msquests.core.quest.result.QuestStartResult;
 import com.github.ibanetchep.msquests.core.registry.ActorResolver;
 import com.github.ibanetchep.msquests.database.DbAccess;
+import com.github.ibanetchep.msquests.bukkit.document.QuestGroupChangeCheck;
+import com.github.ibanetchep.msquests.core.impact.ImpactSource;
 import com.github.ibanetchep.msquests.database.repository.QuestFiguresSqlSource;
+import com.github.ibanetchep.msquests.database.repository.QuestImpactSqlSource;
 import net.artisanmc.modules.api.ArtisanAPI;
+import net.artisanmc.modules.api.options.OptionEntry;
 import net.artisanmc.modules.api.ArtisanModule;
 import net.artisanmc.modules.api.action.ActionDeclaration;
 import net.artisanmc.modules.api.command.CommandDeclaration;
@@ -35,6 +40,7 @@ import net.artisanmc.modules.api.datasource.Stability;
 import net.artisanmc.modules.api.document.DocumentKindDeclaration;
 import net.artisanmc.modules.api.editor.EditorBundleDeclaration;
 import net.artisanmc.modules.api.gameevent.GameEventDeclaration;
+import net.artisanmc.modules.api.playercommand.PlayerCommandDeclaration;
 import net.artisanmc.modules.api.template.TemplateDeclaration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -44,6 +50,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -76,15 +83,26 @@ import java.util.logging.Level;
  *       Absent → the viewer.</li>
  *   <li>{@code actor} — which actor's quests to read: {@code player} (default),
  *       {@code global}, or any other registered actor type.</li>
- *   <li>{@code group} — restrict to one quest group ({@code msquests:quests} and
- *       {@code msquests:active}).</li>
+ *   <li>{@code group} — restrict to one quest group ({@code quests:quests} and
+ *       {@code quests:active}).</li>
  * </ul>
  */
 public final class MsQuestsArtisanModule implements ArtisanModule {
 
-    static final String GROUPS = "msquests:groups";
-    static final String QUESTS = "msquests:quests";
-    static final String ACTIVE = "msquests:active";
+    static final String GROUPS = "quests:groups";
+    static final String QUESTS = "quests:quests";
+    static final String ACTIVE = "quests:active";
+    static final String NPC = "quests:npc";
+    /** Who may play a group, as the editor's group settings offer it: the registered actor types. */
+    static final String ACTOR_TYPES = "quests:actor_types";
+
+    /**
+     * The name a source had under the legacy prefix, kept as its alias so a menu written with
+     * {@code msquests:*} still reads it. The alias is to be removed with the prefix.
+     */
+    static String legacy(String ref) {
+        return "msquests:" + ref.substring(ref.indexOf(':') + 1);
+    }
 
     static final String GROUP_DIR = "quest_groups";
     static final String GROUP_SCHEMA = "quest_group/v1";
@@ -98,6 +116,23 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     static final int TEMPLATE_VERSION = 1;
     static final String TEMPLATE_ROOT = "artisan-templates/daily";
     static final List<String> TEMPLATE_FILES = List.of("quest_groups/example_daily.yaml");
+
+    /**
+     * The module's own menus, kept by Artisan in its folder ({@code TemplateDeclaration.system()}):
+     * untouched they follow each version, edited they stay the admin's. Raise
+     * {@link #SYSTEM_VERSION} whenever one of the files changes.
+     */
+    static final String SYSTEM_TEMPLATE = "quests_files";
+    static final int SYSTEM_VERSION = 1;
+    static final String SYSTEM_ROOT = "artisan-templates/system";
+    static final List<String> SYSTEM_FILES = List.of("menus/journal.yaml");
+
+    /** {@code /quests}: what the command file's {@code module_command} names; never changes. */
+    static final String JOURNAL_COMMAND = "msquests:journal";
+    /** Granted to everyone ({@code plugin.yml}): reading one's own quests is not an admin matter. */
+    static final String JOURNAL_PERMISSION = "artisanquests.journal";
+    /** The system menu {@code /quests} opens, in the module's folder. */
+    static final String JOURNAL_MENU = EditorProject.PROJECT_ID + ":journal";
 
     private final BukkitQuestsPlugin plugin;
     private final ActorResolver actors;
@@ -118,14 +153,25 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         return "msquests/v1";
     }
 
+    /**
+     * The actor types as an option list: the editor offers {@code guild} once MSGuilds registered
+     * it, without asking this server. A type registered later reports the list again.
+     */
+    private void registerActorTypes(ArtisanAPI api) {
+        var types = plugin.getActorTypeRegistry();
+        api.getOptionLists().declare(ACTOR_TYPES,
+                () -> types.orderedKeys().stream().map(OptionEntry::new).toList());
+        types.onChange(api.getOptionLists()::changed);
+    }
+
     @Override
     public void onEnable(ArtisanAPI api) {
         this.api = api;
 
-        api.getDocumentKinds().register(new DocumentKindDeclaration(
-                QuestActions.GROUP_KIND, GROUP_DIR, List.of(GROUP_SCHEMA), null));
+        api.getDocumentKinds().register(groupKind(api));
         registerFolder(api);
         registerTemplate(api);
+        registerJournal(api);
         registerEditorBundle(api);
 
         QuestActions actions = new QuestActions(plugin);
@@ -135,6 +181,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
 
         registerPlaceholders(api);
         registerGameEvents(api);
+        registerActorTypes(api);
+        registerImports(api);
 
         // STATIC: the key-set is the loaded configuration, enumerable without a player,
         // so a menu can place "the daily group" on a specific slot. Only the per-actor
@@ -155,9 +203,9 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("active_count", ModelFieldType.integer(), "Quests in progress for the actor"),
                         new DataSourceField("completed_count", ModelFieldType.integer(), null),
                         new DataSourceField("can_rotate", ModelFieldType.bool(), null),
-                        new DataSourceField("quests", ModelFieldType.list(ModelFieldType.string()), "Nested msquests:quests rows")),
+                        new DataSourceField("quests", ModelFieldType.list(ModelFieldType.string()), "Nested quests:quests rows")),
                 Stability.STATIC,
-                "key"));
+                "key").withAliases(legacy(GROUPS)));
 
         api.getDataSources().register(new DataSourceDeclaration(
                 QUESTS,
@@ -191,7 +239,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                                 "Configured tree: key, name, flow, index, completed, active, "
                                         + "progress_ratio, objectives[] — player progress laid over it")),
                 Stability.STATIC,
-                "id"));
+                "id").withAliases(legacy(QUESTS)));
 
         // DYNAMIC: runtime instances, per actor and per period — pagination only.
         api.getDataSources().register(new DataSourceDeclaration(
@@ -214,11 +262,41 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         new DataSourceField("stage_name", ModelFieldType.string(), null),
                         new DataSourceField("stage_flow", ModelFieldType.string(), "PARALLEL / SEQUENTIAL"),
                         new DataSourceField("progress_ratio", ModelFieldType.number(), "0..1"),
+                        new DataSourceField("objective_name", ModelFieldType.string(), "Current objective"),
+                        new DataSourceField("objective_progress", ModelFieldType.integer(), null),
+                        new DataSourceField("objective_target", ModelFieldType.integer(), null),
                         new DataSourceField("objectives", ModelFieldType.list(ModelFieldType.string()), "Flattened across stages"),
-                        new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()), "Same tree as msquests:quests"),
+                        new DataSourceField("stages", ModelFieldType.list(ModelFieldType.string()), "Same tree as quests:quests"),
                         new DataSourceField("expires_at", ModelFieldType.integer(), "Epoch millis, or 0")),
                 Stability.DYNAMIC,
-                null));
+                null).withAliases(legacy(ACTIVE)));
+
+        // DYNAMIC: what the quests expect from NPCs for one player, read by an NPC module.
+        QuestNpcs npcs = new QuestNpcs(plugin);
+        api.getDataSources().register(new DataSourceDeclaration(
+                NPC,
+                (player, params) -> npcRows(npcs, player, params),
+                List.of(
+                        new DataSourceField("id", ModelFieldType.string(), "group:quest[:objective]"),
+                        new DataSourceField("kind", ModelFieldType.string(),
+                                "objective (in progress, bound to the NPC) / offer (a quest the NPC gives, startable now)"),
+                        new DataSourceField("npc", ModelFieldType.string(), "NPC id, as the quest names it"),
+                        new DataSourceField("group", ModelFieldType.string(), null),
+                        new DataSourceField("quest", ModelFieldType.string(), "Quest key"),
+                        new DataSourceField("quest_name", ModelFieldType.string(), null),
+                        new DataSourceField("objective", ModelFieldType.string(), "Objective key, empty for an offer"),
+                        new DataSourceField("objective_type", ModelFieldType.string(), "talk_npc / deliver_item"),
+                        new DataSourceField("objective_name", ModelFieldType.string(), null),
+                        new DataSourceField("ready", ModelFieldType.bool(),
+                                "False while a delivery's items are not all carried"),
+                        new DataSourceField("conversation", ModelFieldType.string(),
+                                "Conversation to play: the objective's or giver's, `missing` when not ready, or empty"),
+                        new DataSourceField("line", ModelFieldType.string(),
+                                "What the NPC says when no conversation is named: a text or {lang: text} (`missing_line` when not ready), or empty"),
+                        new DataSourceField("progress", ModelFieldType.integer(), null),
+                        new DataSourceField("target", ModelFieldType.integer(), null)),
+                Stability.DYNAMIC,
+                null).withAliases(legacy(NPC)));
 
         api.getCommands().register(new CommandDeclaration("msquests:track",
                 (player, args) -> track(player, argv(args))));
@@ -255,6 +333,36 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         } catch (IllegalArgumentException | IllegalStateException e) {
             plugin.getLogger().log(Level.WARNING, "The example quests are not available", e);
         }
+    }
+
+    /**
+     * The quest journal: a menu of the quests in progress, shipped as a system file the admin
+     * edits in the editor, and {@code /quests}, which opens it. Artisan writes the command as
+     * {@code commands/quests.yml} of the module's folder: its name, aliases and permission are
+     * changed there. A failure leaves the quests running without the journal.
+     */
+    private void registerJournal(ArtisanAPI api) {
+        try {
+            api.getTemplates().register(TemplateDeclaration
+                    .fromResources(getClass().getClassLoader(), SYSTEM_ROOT, SYSTEM_TEMPLATE, SYSTEM_VERSION, SYSTEM_FILES)
+                    .title("Quests")
+                    .system()
+                    .build());
+            api.getPlayerCommands().register(journalCommand());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            plugin.getLogger().log(Level.WARNING, "The quest journal is not available", e);
+        }
+    }
+
+    static PlayerCommandDeclaration journalCommand() {
+        return PlayerCommandDeclaration.builder(JOURNAL_COMMAND)
+                .name("quests")
+                .permission(JOURNAL_PERMISSION)
+                .description(Map.of(
+                        "en", "Your quests in progress",
+                        "fr", "Tes quêtes en cours"))
+                .opensMenu(JOURNAL_MENU)
+                .build();
     }
 
     /** Hands the editor view to Artisan, which serves it to the editor. */
@@ -321,6 +429,46 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         }
     }
 
+    /** Artisan API whose Deploy review asks a kind what a changed file does ({@code DocumentChangeCheck}). */
+    static final String CHANGE_CHECK_API = "1.9.0";
+
+    /**
+     * The {@code quest_group} kind. On an Artisan that has the Deploy review's change check, a
+     * changed group says what it does to the quests in progress; an older one publishes as before.
+     */
+    private DocumentKindDeclaration groupKind(ArtisanAPI api) {
+        DocumentKindDeclaration kind = new DocumentKindDeclaration(
+                QuestActions.GROUP_KIND, GROUP_DIR, List.of(GROUP_SCHEMA), null);
+        if (!api.isCompatibleWith(CHANGE_CHECK_API)) return kind;
+        try {
+            DbAccess db = plugin.getDbAccess();
+            // Without the artisan_quests_* tables there is nothing to count: the reader's refusals only.
+            ImpactSource source = plugin.getContentSource() == ContentSource.ARTISAN && db != null
+                    ? new QuestImpactSqlSource(db) : ImpactSource.EMPTY;
+            return QuestGroupDeployCheck.on(kind, new QuestGroupChangeCheck(source));
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().warning("The Deploy review will not say what a quest change does to players: " + e);
+            return kind;
+        }
+    }
+
+    /** Artisan API this module's import of BeautyQuests needs ({@code api.getImports()}). */
+    static final String IMPORTS_API = "1.7.0";
+
+    /**
+     * {@code /artisan import msquests:beautyquests} (Artisan ADR {@code data-imports}), on an Artisan
+     * that has imports; an older one simply has no such source.
+     */
+    private void registerImports(ArtisanAPI api) {
+        if (!api.isCompatibleWith(IMPORTS_API)) return;
+        try {
+            api.getImports().register(
+                    com.github.ibanetchep.msquests.bukkit.importing.BeautyQuestsImporter.declaration(plugin, api));
+        } catch (RuntimeException e) {
+            plugin.getLogger().warning("Could not register the BeautyQuests import: " + e.getMessage());
+        }
+    }
+
     @Override
     public void onDisable() {
         if (plugin.getEventDispatcher() instanceof BukkitEventDispatcher dispatcher) {
@@ -329,6 +477,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         if (api != null) {
             api.getPlaceholders().unregister(QuestPlaceholders.NAMESPACE);
         }
+        plugin.getActorTypeRegistry().onChange(null);
         this.api = null;
     }
 
@@ -348,6 +497,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
         api.getEvents().publish(new DataReloadEvent(GROUPS));
         api.getEvents().publish(new DataReloadEvent(QUESTS));
         api.getEvents().publish(new DataReloadEvent(ACTIVE));
+        api.getEvents().publish(new DataReloadEvent(NPC));
     }
 
     // --------------------------------------------------------------- fetchers
@@ -372,11 +522,29 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
             if (groupFilter != null && !groupFilter.equals(group.getKey())) continue;
             ActorQuestGroup actorGroup = actorGroupOf(actor, group);
             Function<QuestConfig, QuestStartResult> startCheck = startCheck(actor, group, player);
+            OptionalInt current = ladderIndex(group, actor, player);
+            int index = 0;
             for (QuestConfig config : group.getOrderedQuests()) {
-                rows.add(QuestRows.questRow(group, config, actorGroup, startCheck, translator));
+                LadderSteps.State ladder = current.isPresent() ? LadderSteps.state(index, current.getAsInt()) : null;
+                rows.add(QuestRows.questRow(group, config, actorGroup, startCheck, ladder, translator));
+                index++;
             }
         }
         return rows;
+    }
+
+    /**
+     * The current step of a ladder group for the actor, the group put in step first: a menu opened
+     * right after a level changed shows the new quest, already started. The viewer is who the
+     * steps' conditions are read for. Empty elsewhere, and in an editor preview (no viewer).
+     */
+    private OptionalInt ladderIndex(QuestGroupConfig group, @Nullable QuestActor actor, @Nullable Player viewer) {
+        if (actor == null || viewer == null || group.getDistributionStrategy() != QuestDistributionStrategy.SEQUENTIAL) {
+            return OptionalInt.empty();
+        }
+        if (!group.getActorType().equalsIgnoreCase(actor.getActorType())) return OptionalInt.empty();
+        plugin.getQuestLifecycleService().syncLadder(actor, group, viewer.getUniqueId());
+        return plugin.getQuestLifecycleService().ladderIndex(actor, group, viewer.getUniqueId());
     }
 
     /**
@@ -410,7 +578,7 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                     // Named but unresolved: online-only, and worth saying so rather
                     // than returning an empty list the caller has to interpret.
                     ? "player '" + string(params.get("player")) + "' is not online"
-                    : "msquests:active needs a player — pass the `player` parameter to preview it");
+                    : "quests:active needs a player — pass the `player` parameter to preview it");
         }
 
         String groupFilter = string(params.get("group"));
@@ -428,6 +596,15 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
                         .thenComparing(quest -> quest.getId().toString()))
                 .map(quest -> QuestRows.activeRow(quest, tracked, translator))
                 .toList();
+    }
+
+    /** Params: {@code npc} (one NPC, else all of them) and {@code player} (else the viewer). */
+    private List<Map<String, Object>> npcRows(QuestNpcs npcs, @Nullable Player player, Map<String, ?> params) {
+        UUID targetId = targetId(player, params);
+        if (targetId == null) {
+            throw new PlayerRequiredException(NPC + " needs a player — pass the `player` parameter to preview it");
+        }
+        return npcs.rows(targetId, Bukkit.getPlayer(targetId), string(params.get("npc")));
     }
 
     // --------------------------------------------------------------- commands
@@ -494,8 +671,8 @@ public final class MsQuestsArtisanModule implements ArtisanModule {
     }
 
     /**
-     * Accepts either an instance id (the {@code id} of an {@code msquests:active} row) or a
-     * {@code group:key} config ref (the {@code id} of an {@code msquests:quests} row), and
+     * Accepts either an instance id (the {@code id} of an {@code quests:active} row) or a
+     * {@code group:key} config ref (the {@code id} of an {@code quests:quests} row), and
      * looks it up across every actor the player belongs to — so a guild quest resolves the
      * same way a personal one does.
      */

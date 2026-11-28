@@ -112,6 +112,12 @@ describe("questsLocalRows", () => {
     expect(questsLocalRows({ documents: {} }, QUESTS)).toBeNull();
   });
 
+  it("answers a menu that still names a source by its former msquests prefix", () => {
+    const { project } = load(daily, "en");
+    expect(questsLocalRows(project, "msquests:quests")).toEqual(questsLocalRows(project, QUESTS));
+    expect(questsLocalRows(project, "msquests:groups")).toEqual(questsLocalRows(project, GROUPS));
+  });
+
   it("keeps the player's state of a quest and takes its definition from the draft", () => {
     const { rows } = load(daily, "en");
     const serverRows = [
@@ -148,6 +154,76 @@ describe("questsLocalRows", () => {
     expect(walk).toMatchObject({ name: "Travel 100 blocks", target: 100, progress: 10 });
     // A quest nobody started: the server's neutral state.
     expect(quests[1]).toMatchObject({ status_key: "NOT_STARTED", status: "Available", assigned: false });
+  });
+
+  it("leaves a stage added behind the player, and an objective completed once, as they are", () => {
+    const draft = structuredClone(daily) as { quests: { stages: Row[] }[] };
+    const [dig] = draft.quests[0]!.stages;
+    // The draft adds a stage before the one the player stands on, and raises a completed target.
+    draft.quests[0]!.stages = [
+      { key: "prepare", title: "Prepare", objectives: [{ key: "pack", type: "travel", distance: 10 }] },
+      dig!,
+    ];
+    const { rows } = load(draft as unknown as Row, "en");
+    const serverRows = [
+      {
+        id: "uuid",
+        quest_key: "miner",
+        group: "daily",
+        status_key: "IN_PROGRESS",
+        stages: [
+          {
+            key: "dig",
+            active: true,
+            objectives: [
+              { key: "stone", progress: 32, status_key: "COMPLETED" },
+              { key: "walk", progress: 10, status_key: "IN_PROGRESS" },
+            ],
+          },
+        ],
+      },
+    ];
+    const [active] = rows(ACTIVE, { serverRows });
+    const [prepare, digRow] = active!.stages as Row[];
+    expect(active).toMatchObject({ stage_name: "Dig", stage_index: 1 });
+    expect(prepare).toMatchObject({ completed: true, active: false, progress_ratio: 1 });
+    expect((prepare!.objectives as Row[])[0]).toMatchObject({ status_key: "COMPLETED" });
+    const [stone, walk] = digRow!.objectives as Row[];
+    // 32 of 64, but completed once: it stays completed.
+    expect(stone).toMatchObject({ completed: true, status_key: "COMPLETED", progress_ratio: 1 });
+    expect(walk).toMatchObject({ completed: false, status_key: "IN_PROGRESS" });
+  });
+
+  it("starts an objective whose type changed from zero, and follows a changed key", () => {
+    const draft = structuredClone(daily) as { quests: { stages: { objectives: Row[] }[] }[] };
+    const [stone, walk] = draft.quests[0]!.stages[0]!.objectives;
+    stone!.type = "travel";
+    stone!.distance = 64;
+    walk!.key = "stroll";
+    walk!.old_key = "walk";
+    const { rows } = load(draft as unknown as Row, "en");
+    const serverRows = [
+      {
+        id: "uuid",
+        quest_key: "miner",
+        group: "daily",
+        status_key: "IN_PROGRESS",
+        stages: [
+          {
+            key: "dig",
+            active: true,
+            objectives: [
+              { key: "stone", type: "block_break", progress: 32, status_key: "IN_PROGRESS" },
+              { key: "walk", type: "travel", progress: 10, status_key: "PENDING" },
+            ],
+          },
+        ],
+      },
+    ];
+    const [active] = rows(ACTIVE, { serverRows });
+    const [first, second] = (active!.stages as Row[])[0]!.objectives as Row[];
+    expect(first).toMatchObject({ key: "stone", progress: 0 });
+    expect(second).toMatchObject({ key: "stroll", progress: 10 });
   });
 
   it("narrows quests to the group the menu asks for", () => {

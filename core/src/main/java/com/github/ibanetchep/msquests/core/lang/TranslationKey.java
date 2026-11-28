@@ -13,6 +13,7 @@ public enum TranslationKey implements Translatable {
     QUEST_ADMIN_LIST_OBJECTIVE_TEMPLATE("quest_admin.list.objective_template"),
     QUEST_ADMIN_LIST_PAGE_OUT_OF_BOUNDS("quest_admin.list.page_out_of_bounds"),
     QUEST_ADMIN_DISTRIBUTED_GROUP("quest_admin.group.distributed_quests"),
+    QUEST_COMMAND_STARTED("quest.command.started"),
     QUEST_COMMAND_TRACKED("quest.command.tracked"),
     QUEST_COMMAND_UNTRACKED("quest.command.untracked"),
     QUEST_COMMAND_ABANDONED("quest.command.abandoned"),
@@ -20,6 +21,7 @@ public enum TranslationKey implements Translatable {
     ZMENU_QUEST_PROGRESS_COMPLETED("zmenu.quest.progress.completed"),
     PLACEHOLDER_QUEST("placeholder.quest"),
     PLACEHOLDER_STAGE("placeholder.stage"),
+    PLACEHOLDER_STAGE_DEFAULT_NAME("placeholder.stage_default_name"),
     PLACEHOLDER_OBJECTIVE("placeholder.objective");
 
     private final String key;

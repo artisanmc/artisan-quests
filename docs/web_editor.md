@@ -1,5 +1,8 @@
 # How the web editor works
 
+> Obsolete: this was the design of a separate web editor (Symfony + Nuxt). Quests are now edited in the
+> Artisan editor (see `ARCHITECTURE.md` and `docs/site/`).
+
 ## Flow:
 - [Server] the user types the command /quest editor
 - [Server] sends a POST request to the web API with the server config

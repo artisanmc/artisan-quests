@@ -8,6 +8,25 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ActorTypeRegistry {
 
     private final Map<String, Class<? extends QuestActor>> actorTypes = new ConcurrentHashMap<>();
+    private volatile Runnable onChange = () -> {};
+
+    /** Called after each registration: the editor's list of who may play a group follows. */
+    public void onChange(Runnable listener) {
+        this.onChange = listener == null ? () -> {} : listener;
+    }
+
+    /**
+     * The registered keys as a group's settings list them: {@code player} and {@code global}
+     * first, then the types other plugins added, by name.
+     */
+    public java.util.List<String> orderedKeys() {
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        for (String builtIn : java.util.List.of("player", "global")) {
+            if (actorTypes.containsKey(builtIn)) keys.add(builtIn);
+        }
+        actorTypes.keySet().stream().filter(key -> !keys.contains(key)).sorted().forEach(keys::add);
+        return keys;
+    }
 
     /**
      * Registers a new actor type.
@@ -17,6 +36,7 @@ public class ActorTypeRegistry {
      */
     public void registerType(String key, Class<? extends QuestActor> actorClass) {
         actorTypes.put(key, actorClass);
+        onChange.run();
     }
 
     /**

@@ -26,6 +26,8 @@ public class QuestConfig implements PlaceholderProvider {
     private String tier;
     private QuestGroupConfig group;
     private Conditions requirements = Conditions.NONE;
+    private Conditions completedWhen = Conditions.NONE;
+    private @Nullable QuestGiver giver;
 
     public QuestConfig(String key, String name, String description, long duration) {
         this.key = key;
@@ -44,8 +46,9 @@ public class QuestConfig implements PlaceholderProvider {
     }
 
     /**
-     * Immutable id of a quest read from a {@code quest_group} Document, null for a quest read
-     * from {@code quests/*.yml}. The database stores it instead of the editable key.
+     * The {@code uid} a {@code quest_group} Document written before keys became the identity
+     * still carries, else null. Rows are resolved by {@code (group key, quest key)}; a new row
+     * still records it, so the jar that resolved rows by uid can read what this one wrote.
      */
     public @Nullable String getUid() {
         return uid;
@@ -146,6 +149,24 @@ public class QuestConfig implements PlaceholderProvider {
 
     public void setRequirements(Conditions requirements) {
         this.requirements = requirements;
+    }
+
+    /** In a ladder group, the state this quest aims at: once it holds, the quest is done. */
+    public Conditions getCompletedWhen() {
+        return completedWhen;
+    }
+
+    public void setCompletedWhen(Conditions completedWhen) {
+        this.completedWhen = completedWhen;
+    }
+
+    /** The NPC that hands this quest out, null for a quest started another way (menu, distribution, action). */
+    public @Nullable QuestGiver getGiver() {
+        return giver;
+    }
+
+    public void setGiver(@Nullable QuestGiver giver) {
+        this.giver = giver;
     }
 
     @Override

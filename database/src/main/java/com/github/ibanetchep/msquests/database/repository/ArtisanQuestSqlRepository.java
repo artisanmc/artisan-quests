@@ -21,9 +21,11 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Quests in {@code artisan_quests_quest} / {@code artisan_quests_objective}, used once quests come
- * from {@code quest_group} Documents. A quest row names its config by {@code quest_uid}; the
- * {@code quest_key} / {@code group_key} columns only record the names last saved, refreshed on
- * every save.
+ * from {@code quest_group} Documents. A quest row names its config by {@code (group_key,
+ * quest_key)}, written once: a key change moves the rows ({@link KeyChangeSqlRepository}), a save
+ * never does, so a quest still in memory under its former key cannot undo one.
+ * {@code quest_uid} is the uid of a Document that still carries one (else empty), kept for the
+ * jar that resolved rows by it.
  *
  * <p>An objective row carries {@code (quest_id, stage_key, objective_key)}. Objective keys are
  * unique within a quest, so a save matches the row on {@code (quest_id, objective_key)} and moves
@@ -44,7 +46,7 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
         String query = """
                 SELECT
                     q.id as q_id, q.quest_uid as q_uid, q.quest_key as q_key, q.group_key as q_group_key,
-                    q.quest_status as q_status, q.completed_at as q_completed_at,
+                    q.quest_status as q_status, q.completed_at as q_completed_at, q.reached_stage as q_reached_stage,
                     q.created_at as q_created_at, q.updated_at as q_updated_at, q.actor_id as q_actor_id,
                     o.stage_key as o_stage, o.objective_key as o_key, o.objective_status as o_status,
                     o.objective_type as o_type, o.progress as o_progress
@@ -74,7 +76,8 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
                                     rs.getTimestamp("q_created_at").getTime(),
                                     rs.getTimestamp("q_updated_at").getTime(),
                                     new HashMap<>(),
-                                    rs.getString("q_uid")
+                                    rs.getString("q_uid"),
+                                    rs.getString("q_reached_stage")
                             );
                             quests.put(questId, quest);
                         }
@@ -114,32 +117,28 @@ public class ArtisanQuestSqlRepository extends SqlRepository implements QuestRep
     @Override
     public CompletableFuture<Void> save(QuestDTO quest) {
         return runAsync(() -> {
-            if (quest.questUid() == null) {
-                throw new IllegalArgumentException("Quest " + quest.id() + " (" + quest.groupKey() + "/"
-                        + quest.questKey() + ") has no uid: artisan_quests_quest only stores quest_group Document quests");
-            }
             getJdbi().useTransaction(handle -> {
                 String questId = quest.id().toString();
 
                 int updatedQuest = handle.createUpdate("""
                                 UPDATE artisan_quests_quest
-                                SET quest_status = :status, completed_at = :completedAt, quest_key = :questKey, group_key = :groupKey
+                                SET quest_status = :status, completed_at = :completedAt, reached_stage = :reachedStage
                                 WHERE id = :id""")
                         .bind("id", questId)
+                        .bind("reachedStage", quest.reachedStage())
                         .bind("status", quest.status().toString())
                         .bind("completedAt", quest.completedAt() != null ? new Timestamp(quest.completedAt()) : null)
-                        .bind("questKey", quest.questKey())
-                        .bind("groupKey", quest.groupKey())
                         .execute();
 
                 if (updatedQuest == 0) {
                     long now = System.currentTimeMillis();
                     handle.createUpdate("""
                                     INSERT INTO artisan_quests_quest
-                                        (id, quest_uid, quest_key, group_key, quest_status, completed_at, actor_id, created_at, updated_at)
-                                    VALUES (:id, :questUid, :questKey, :groupKey, :status, :completedAt, :actorId, :createdAt, :updatedAt)""")
+                                        (id, quest_uid, quest_key, group_key, quest_status, completed_at, actor_id, created_at, updated_at, reached_stage)
+                                    VALUES (:id, :questUid, :questKey, :groupKey, :status, :completedAt, :actorId, :createdAt, :updatedAt, :reachedStage)""")
+                            .bind("reachedStage", quest.reachedStage())
                             .bind("id", questId)
-                            .bind("questUid", quest.questUid())
+                            .bind("questUid", quest.questUid() != null ? quest.questUid() : "")
                             .bind("questKey", quest.questKey())
                             .bind("groupKey", quest.groupKey())
                             .bind("status", quest.status().toString())

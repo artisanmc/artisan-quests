@@ -50,8 +50,13 @@ class QuestFiguresSqlSourceTest {
         db.closePool();
     }
 
-    private QuestDTO quest(UUID id, String uid, QuestStatus status, Long completedAt, Map<String, QuestObjectiveDTO> objectives) {
-        return new QuestDTO(id, "key_" + uid, "group", actor, status, completedAt, 1_000L, 1_000L, objectives, uid);
+    private QuestDTO quest(UUID id, String key, QuestStatus status, Long completedAt, Map<String, QuestObjectiveDTO> objectives) {
+        return quest(id, "group", key, status, completedAt, objectives);
+    }
+
+    private QuestDTO quest(UUID id, String group, String key, QuestStatus status, Long completedAt,
+                           Map<String, QuestObjectiveDTO> objectives) {
+        return new QuestDTO(id, key, group, actor, status, completedAt, 1_000L, 1_000L, objectives);
     }
 
     private QuestObjectiveDTO objective(UUID quest, String stage, String key, QuestObjectiveStatus status) {
@@ -59,16 +64,18 @@ class QuestFiguresSqlSourceTest {
     }
 
     @Test
-    void readsTheQuestRowsOfTheAskedUidsOnly() {
+    void readsTheRowsOfTheAskedQuestsOfTheGroupOnly() {
         quests.save(quest(UUID.randomUUID(), "u1", QuestStatus.COMPLETED, 61_000L, new HashMap<>())).join();
         quests.save(quest(UUID.randomUUID(), "u1", QuestStatus.IN_PROGRESS, null, new HashMap<>())).join();
         quests.save(quest(UUID.randomUUID(), "other", QuestStatus.IN_PROGRESS, null, new HashMap<>())).join();
+        // The same quest key in another group is another quest.
+        quests.save(quest(UUID.randomUUID(), "elsewhere", "u1", QuestStatus.IN_PROGRESS, null, new HashMap<>())).join();
 
-        List<QuestRow> rows = source.quests(List.of("u1", "missing"));
+        List<QuestRow> rows = source.quests("group", List.of("u1", "missing"));
         assertEquals(2, rows.size());
         QuestRow done = rows.stream().filter(r -> r.status().equals("COMPLETED")).findFirst().orElseThrow();
         assertEquals(60_000L, done.completedAt() - done.createdAt());
-        assertTrue(source.quests(List.of()).isEmpty());
+        assertTrue(source.quests("group", List.of()).isEmpty());
     }
 
     @Test
@@ -100,7 +107,7 @@ class QuestFiguresSqlSourceTest {
 
         // A quest that is no longer in progress leaves the stages.
         quests.save(quest(id, "u1", QuestStatus.COMPLETED, 5_000L, objectives)).join();
-        assertTrue(source.stages(List.of("u1")).isEmpty());
+        assertTrue(source.stages("group", List.of("u1")).isEmpty());
     }
 
     @Test
@@ -118,12 +125,12 @@ class QuestFiguresSqlSourceTest {
         done.put("a", objective(running, "one", "a", QuestObjectiveStatus.COMPLETED));
         quests.save(quest(running, "u2", QuestStatus.IN_PROGRESS, null, done)).join();
 
-        assertEquals(objectiveEnd, source.quests(List.of("u1")).get(0).completedAt());
-        assertNull(source.quests(List.of("u2")).get(0).completedAt());
+        assertEquals(objectiveEnd, source.quests("group", List.of("u1")).get(0).completedAt());
+        assertNull(source.quests("group", List.of("u2")).get(0).completedAt());
     }
 
     private StageRow stage(UUID quest, String key) {
-        return source.stages(List.of("u1")).stream()
+        return source.stages("group", List.of("u1")).stream()
                 .filter(r -> r.questId().equals(quest.toString()) && r.stageKey().equals(key))
                 .findFirst().orElseThrow();
     }

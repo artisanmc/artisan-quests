@@ -13,7 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** YAML as the editor writes it: no document marker, minimal quotes, block scalars for multi-line text. */
-final class DocumentYaml {
+public final class DocumentYaml {
 
     static final ObjectMapper MAPPER = new ObjectMapper(YAMLFactory.builder()
             .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
@@ -38,7 +38,7 @@ final class DocumentYaml {
         return tree != null ? tree : new LinkedHashMap<>();
     }
 
-    static String write(Map<String, Object> tree) throws IOException {
+    public static String write(Map<String, Object> tree) throws IOException {
         return MAPPER.writeValueAsString(tree);
     }
 

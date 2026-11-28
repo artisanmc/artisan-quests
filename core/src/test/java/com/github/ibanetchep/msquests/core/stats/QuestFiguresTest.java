@@ -76,13 +76,13 @@ class QuestFiguresTest {
     @Test
     void aQuestInProgressWhosePeriodWasResetCountsAsExpired() {
         // Rows created before 1 000 belong to a past period: their actor never came back to expire them.
-        QuestFigures.Lapsed lapsed = (uid, createdAt) -> createdAt < 1_000;
+        QuestFigures.Lapsed lapsed = (key, createdAt) -> createdAt < 1_000;
         List<Map<String, Object>> rows = QuestFigures.progress(List.of(
                 new QuestRow("u1", "IN_PROGRESS", 0, null),
                 new QuestRow("u1", "IN_PROGRESS", 500, null),
                 new QuestRow("u1", "IN_PROGRESS", 2_000, null),
                 new QuestRow("u1", "COMPLETED", 0, 600L)
-        ), uid -> "quest_" + uid, lapsed);
+        ), key -> "quest_" + key, lapsed);
 
         Map<String, Object> row = rows.get(0);
         assertEquals(4, row.get("started"));
@@ -93,11 +93,11 @@ class QuestFiguresTest {
 
     @Test
     void aLapsedQuestStandsOnNoStage() {
-        QuestFigures.Lapsed lapsed = (uid, createdAt) -> createdAt < 1_000;
+        QuestFigures.Lapsed lapsed = (key, createdAt) -> createdAt < 1_000;
         List<Map<String, Object>> rows = QuestFigures.stuck(List.of(
                 new StageRow("old", "u1", 0, "one", 1, null),
                 new StageRow("new", "u1", 5_000, "one", 1, null)
-        ), uid -> "quest_" + uid, uid -> List.of("one"), lapsed, 65_000);
+        ), key -> "quest_" + key, key -> List.of("one"), lapsed, 65_000);
 
         assertEquals(1, rows.size());
         assertEquals(1, rows.get(0).get("players"));

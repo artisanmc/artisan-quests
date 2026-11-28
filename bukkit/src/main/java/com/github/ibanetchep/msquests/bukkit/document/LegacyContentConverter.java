@@ -29,11 +29,12 @@ import java.util.TreeSet;
 
 /**
  * Converts the groups of {@code quests/*.yml} into {@code quest_group} Documents, one file per
- * file, and records the uids it chose in a {@link MigrationMap}. {@link #plan} computes
+ * file, and records what the copy of the saved progress needs in a {@link MigrationMap}. {@link #plan} computes
  * everything without writing (the dry run); {@link #apply} writes the planned files.
  *
  * <ul>
- *   <li>Idempotent: a uid already in the previous map, or in an existing Document, is kept.</li>
+ *   <li>Writes no uid: a group is its file name, a quest its key. A uid given by an earlier run
+ *       (in the previous map, or in a Document it wrote) is kept, so that run's rows still match.</li>
  *   <li>Never overwrites: a Document that already exists is kept as it is (it may have been
  *       edited since) and reported.</li>
  *   <li>Checked: every Document is read back with {@link QuestGroupDocumentReader} and compared
@@ -84,14 +85,18 @@ public final class LegacyContentConverter {
 
         Map<String, MigrationMap.Group> groups = new TreeMap<>(previous.groups());
         List<GroupPlan> plans = new ArrayList<>();
-        Map<String, Path> documentsByUid = documentsByUid(questGroupsDir);
+        Map<String, Path> renamedDocuments = renamedDocuments(questGroupsDir);
 
         for (QuestGroupConfigDTO group : new TreeMap<>(legacy).values()) {
             report.section("Group " + group.key());
             MigrationMap.Group previousEntry = previous.group(group.key());
             Path target = questGroupsDir.resolve(group.key() + ".yaml");
-            if (!Files.exists(target) && previousEntry != null && documentsByUid.containsKey(previousEntry.uid())) {
-                target = documentsByUid.get(previousEntry.uid()); // renamed in the editor since the last run
+            Path renamed = renamedDocuments.get("key:" + group.key());
+            if (renamed == null && previousEntry != null && previousEntry.uid() != null) {
+                renamed = renamedDocuments.get("uid:" + previousEntry.uid());
+            }
+            if (!Files.exists(target) && renamed != null) {
+                target = renamed; // renamed since the last run
                 report.line("Already converted, found under its new name " + target.getFileName() + ".");
             }
             Existing existing = readExisting(target, group.key(), report);
@@ -114,15 +119,15 @@ public final class LegacyContentConverter {
 
             if (existing != null && previousEntry != null) {
                 groups.put(group.key(), previousEntry); // the copy already relies on it
-            } else if (existing != null && existing.groupUid() == null) {
+            } else if (existing != null && !existing.readable()) {
                 groups.remove(group.key());
-                report.warn("No uid can be matched to the kept Document: the saved progress of this group"
+                report.warn("The kept Document cannot be read: the saved progress of this group"
                         + " will not be copied. Fix or remove " + target.getFileName() + " and run the migration again.");
             } else {
                 groups.put(group.key(), new MigrationMap.Group(groupUid, questEntries));
                 if (existing != null) {
                     List<String> absent = questEntries.keySet().stream()
-                            .filter(k -> !existing.questUids().containsKey(k)).toList();
+                            .filter(k -> !existing.questKeys().contains(k)).toList();
                     if (!absent.isEmpty()) {
                         report.warn("Quests missing from the kept Document, their saved progress will not load: " + absent);
                     }
@@ -208,15 +213,24 @@ public final class LegacyContentConverter {
         }
     }
 
-    /** Root uid of each Document already in the folder, to find one renamed since the last run. */
-    private static Map<String, Path> documentsByUid(Path questGroupsDir) {
+    /**
+     * The Documents already in the folder by what they used to be called, to find one renamed
+     * since the last run: {@code key:<old_key>} for each former key it declares, and
+     * {@code uid:<uid>} for the uid an earlier conversion gave it.
+     */
+    private static Map<String, Path> renamedDocuments(Path questGroupsDir) {
         Map<String, Path> byUid = new HashMap<>();
         if (!Files.isDirectory(questGroupsDir)) return byUid;
         try (java.util.stream.Stream<Path> list = Files.list(questGroupsDir)) {
             for (Path file : list.filter(f -> f.getFileName().toString().endsWith(".yaml")).sorted().toList()) {
                 try {
-                    Object uid = DocumentYaml.parse(Files.readString(file, StandardCharsets.UTF_8)).get("uid");
-                    if (uid != null) byUid.putIfAbsent(uid.toString(), file);
+                    Map<String, Object> doc = DocumentYaml.parse(Files.readString(file, StandardCharsets.UTF_8));
+                    Object uid = doc.get("uid");
+                    if (uid != null) byUid.putIfAbsent("uid:" + uid, file);
+                    Object old = doc.get("old_key");
+                    for (Object key : old instanceof List<?> keys ? keys : old != null ? List.of(old) : List.of()) {
+                        byUid.putIfAbsent("key:" + key, file);
+                    }
                 } catch (IOException | RuntimeException ignored) {
                     // unreadable: the repository reports it at load
                 }
@@ -229,8 +243,9 @@ public final class LegacyContentConverter {
 
     // --------------------------------------------------------------- uids
 
-    /** A Document already on disk, read for the uids it carries; {@code groupUid} null when unreadable. */
-    private record Existing(@Nullable String groupUid, Map<String, String> questUids) {
+    /** A Document already on disk: its quests, and the uids an earlier run gave it, if any. */
+    private record Existing(boolean readable, @Nullable String groupUid, Set<String> questKeys,
+                            Map<String, String> questUids) {
     }
 
     private @Nullable Existing readExisting(Path target, String groupKey, MigrationReport report) {
@@ -239,46 +254,41 @@ public final class LegacyContentConverter {
             QuestGroupConfigDTO doc = QuestGroupDocumentReader.read(groupKey,
                     DocumentYaml.parse(Files.readString(target, StandardCharsets.UTF_8)), lang);
             Map<String, String> questUids = new HashMap<>();
+            Set<String> questKeys = new HashSet<>();
             for (QuestConfigDTO quest : doc.quests()) {
-                questUids.put(quest.key(), quest.uid());
+                questKeys.add(quest.key());
+                if (quest.uid() != null) questUids.put(quest.key(), quest.uid());
             }
-            return new Existing(doc.uid(), questUids);
+            return new Existing(true, doc.uid(), questKeys, questUids);
         } catch (IOException | RuntimeException e) {
             report.warn(target.getFileName() + " already exists but cannot be read (" + e.getMessage()
-                    + "): kept as it is, its uids are not reused.");
-            return new Existing(null, Map.of());
+                    + "): kept as it is.");
+            return new Existing(false, null, Set.of(), Map.of());
         }
     }
 
-    /** Previous map first (the database copy may already rely on it), then an existing Document, then new. */
+    /**
+     * The uids an earlier run gave: the previous map first (the database copy may already rely
+     * on it), then an existing Document. None otherwise: nothing mints one any more.
+     */
     private static final class Uids {
         private final @Nullable MigrationMap.Group previous;
         private final @Nullable Existing existing;
-        private final String group;
-        private final Map<String, String> quests = new HashMap<>();
-        private final Set<String> used = new HashSet<>();
 
         Uids(String groupKey, @Nullable MigrationMap.Group previous, @Nullable Existing existing) {
             this.previous = previous;
             this.existing = existing;
-            String uid = previous != null ? previous.uid() : existing != null ? existing.groupUid() : null;
-            this.group = uid != null ? uid : Ulid.generate();
-            used.add(group);
         }
 
-        String group() {
-            return group;
+        @Nullable String group() {
+            return previous != null ? previous.uid() : existing != null ? existing.groupUid() : null;
         }
 
-        String quest(String questKey) {
-            return quests.computeIfAbsent(questKey, key -> {
-                String uid = null;
-                if (previous != null && previous.quests().get(key) != null) uid = previous.quests().get(key).uid();
-                if (uid == null && existing != null) uid = existing.questUids().get(key);
-                if (uid == null || used.contains(uid)) uid = Ulid.generate();
-                used.add(uid);
-                return uid;
-            });
+        @Nullable String quest(String questKey) {
+            if (previous != null && previous.quests().get(questKey) != null) {
+                return previous.quests().get(questKey).uid();
+            }
+            return existing != null ? existing.questUids().get(questKey) : null;
         }
     }
 

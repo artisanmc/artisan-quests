@@ -1,5 +1,7 @@
 package com.github.ibanetchep.msquests.bukkit.document;
 
+import com.github.ibanetchep.msquests.core.quest.config.QuestGiver;
+import com.github.ibanetchep.msquests.core.repository.KeyChange;
 import com.github.ibanetchep.msquests.core.dto.DistributionConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigDTO;
 import com.github.ibanetchep.msquests.core.dto.QuestConfigHooksDTO;
@@ -16,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,8 +29,15 @@ import java.util.Set;
 /**
  * Reads a {@code quest_group/v1} Document into the same {@link QuestGroupConfigDTO} the
  * {@code quests/*.yml} reader produces, so everything after it (mapper, registries, services) is
- * shared. The group key is the Document's id (its file name); the {@code uid}s are what the
- * database stores.
+ * shared. The group key is the Document's id (its file name).
+ *
+ * <p>A group and a quest are identified by their key, which is also what the database stores.
+ * A key is an identifier, not a name (that is the title): changing one is rare, and keeps the
+ * progress when the Document says what the key was: {@code old_key}
+ * (one key or a list) on the group or the quest. {@link #keyChanges} turns these into the moves
+ * the storage applies before the group is used; the field may stay or go once every server
+ * has loaded it. {@code uid}, the identity of Documents written before, is optional and read
+ * as one more former name.
  *
  * <p>Actions ({@code actions.*}; formerly {@code on.*} and {@code rewards}, still read) are Artisan chains and conditions ({@code requirements},
  * objective {@code conditions}) Artisan conditions, in the keyed wire; Artisan checks their
@@ -40,6 +50,9 @@ import java.util.Set;
 public final class QuestGroupDocumentReader {
 
     public static final String SCHEMA = "quest_group/v1";
+
+    /** What the rotation rows can hold ({@code artisan_quests_rotation.group_uid}). */
+    static final int MAX_GROUP_KEY = 64;
 
     /** {@code actions.<hook>} → the hook of {@link QuestGroupConfigActionsDTO}. */
     static final List<String> HOOKS = List.of(
@@ -62,7 +75,11 @@ public final class QuestGroupDocumentReader {
         if (!SCHEMA.equals(schema)) {
             throw new DocumentException("schema", "expected " + SCHEMA + ", got " + schema);
         }
-        String uid = requiredString(doc, "uid", "");
+        if (groupKey.length() > MAX_GROUP_KEY) {
+            throw new DocumentException("id", "a group key holds at most " + MAX_GROUP_KEY + " characters, got " + groupKey.length());
+        }
+        String uid = optionalString(doc, "uid", "");
+        oldKeys(doc, "");
 
         Map<String, Object> window = map(doc.get("window"), "window");
         Map<String, Object> reset = map(doc.get("reset"), "reset");
@@ -127,11 +144,12 @@ public final class QuestGroupDocumentReader {
         List<Object> questItems = list(doc.get("quests"), "quests");
         for (int i = 0; i < questItems.size(); i++) {
             QuestConfigDTO quest = quest(questItems.get(i), "quests[" + i + "]", lang);
-            if (quest.uid().equals(uid) || !questUids.add(quest.uid())) {
+            if (quest.uid() != null && (quest.uid().equals(uid) || !questUids.add(quest.uid()))) {
                 throw new DocumentException("quests[" + i + "].uid", "uid " + quest.uid() + " is used twice in this group");
             }
             quests.add(quest);
         }
+        checkOldKeys(questItems, quests, groupKey);
 
         try {
             return new QuestGroupConfigDTO(
@@ -160,13 +178,148 @@ public final class QuestGroupDocumentReader {
         }
     }
 
+    /**
+     * The former names this Document declares, as moves onto its current keys. Call it on a
+     * Document {@link #read} accepted.
+     */
+    public static List<KeyChange> keyChanges(String groupKey, Map<String, Object> doc) {
+        List<KeyChange> changes = new ArrayList<>();
+        for (String old : oldKeys(doc, "")) {
+            if (!old.equals(groupKey)) changes.add(new KeyChange.Group(old, groupKey));
+        }
+        String uid = optionalString(doc, "uid", "");
+        if (uid != null && !uid.equals(groupKey)) changes.add(new KeyChange.GroupUid(uid, groupKey));
+
+        List<Object> questItems = list(doc.get("quests"), "quests");
+        for (int i = 0; i < questItems.size(); i++) {
+            String path = "quests[" + i + "]";
+            Map<String, Object> quest = map(questItems.get(i), path);
+            String key = requiredString(quest, "key", path);
+            String questUid = optionalString(quest, "uid", path);
+            if (questUid != null) changes.add(new KeyChange.QuestUid(questUid, groupKey, key));
+            for (Former old : formers(quest, path, groupKey)) {
+                if (old.group() != null) {
+                    changes.add(new KeyChange.QuestMoved(old.group(), old.key(), groupKey, key));
+                } else if (!old.key().equals(key)) {
+                    changes.add(new KeyChange.Quest(groupKey, old.key(), key));
+                }
+            }
+        }
+        return changes;
+    }
+
+    /**
+     * A former key must lead to one quest: one that is still a quest's key would hand that
+     * quest's rows over, and one claimed twice would give them to whichever comes first.
+     */
+    private static void checkOldKeys(List<Object> questItems, List<QuestConfigDTO> quests, String groupKey) {
+        Set<String> keys = new HashSet<>();
+        quests.forEach(quest -> keys.add(quest.key()));
+        Map<String, String> claimed = new HashMap<>();
+        for (int i = 0; i < questItems.size(); i++) {
+            String path = "quests[" + i + "]";
+            String key = quests.get(i).key();
+            for (Former former : formers(map(questItems.get(i), path), path, groupKey)) {
+                // A quest that came from another group: checked against that group once all are read.
+                if (former.group() != null) continue;
+                String old = former.key();
+                if (old.equals(key)) continue;
+                if (keys.contains(old)) {
+                    throw new DocumentException(path + ".old_key", "'" + old + "' is still the key of a quest of this group:"
+                            + " remove it from old_key, or the progress of '" + old + "' would move to '" + key + "'");
+                }
+                String other = claimed.putIfAbsent(old, key);
+                if (other != null) {
+                    throw new DocumentException(path + ".old_key", "'" + old + "' is already the old_key of '" + other + "'");
+                }
+            }
+        }
+    }
+
+    /** Where a quest was before: its key, and its group when that was another one (else null). */
+    private record Former(@Nullable String group, String key) {
+    }
+
+    /**
+     * A quest's {@code old_key}: a former key, {@code {group, key}} for a quest that was in
+     * another group, or a list of either.
+     */
+    private static List<Former> formers(Map<String, Object> quest, String path, String groupKey) {
+        String fieldPath = path + ".old_key";
+        Object value = quest.get("old_key");
+        if (value == null) return List.of();
+        List<Object> items = value instanceof List<?> list ? new ArrayList<>(list) : List.of(value);
+        List<Former> formers = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            String itemPath = value instanceof List<?> ? fieldPath + "[" + i + "]" : fieldPath;
+            if (items.get(i) instanceof Map<?, ?>) {
+                Map<String, Object> place = map(items.get(i), itemPath);
+                String key = oldKey(place.get("key"), itemPath + ".key");
+                String group = oldKey(place.get("group"), itemPath + ".group");
+                formers.add(new Former(group.equals(groupKey) ? null : group, key));
+            } else {
+                formers.add(new Former(null, oldKey(items.get(i), itemPath)));
+            }
+        }
+        return formers;
+    }
+
+    /**
+     * The former keys of an objective lead to one objective of the quest, like a quest's in its
+     * group: the progress stored under one is read as the objective's own.
+     */
+    private static void checkObjectiveOldKeys(Map<String, List<String>> oldKeysByObjective, Set<String> objectiveKeys,
+                                              String path) {
+        Map<String, String> claimed = new HashMap<>();
+        oldKeysByObjective.forEach((key, olds) -> {
+            for (String old : olds) {
+                if (old.equals(key)) continue;
+                if (objectiveKeys.contains(old)) {
+                    throw new DocumentException(path, "objective '" + key + "': old_key '" + old
+                            + "' is still the key of an objective of this quest: remove it from old_key,"
+                            + " or '" + key + "' would start with the progress of '" + old + "'");
+                }
+                String other = claimed.putIfAbsent(old, key);
+                if (other != null) {
+                    throw new DocumentException(path, "objective '" + key + "': old_key '" + old
+                            + "' is already the old_key of '" + other + "'");
+                }
+            }
+        });
+    }
+
+    /** {@code old_key}: one former key, or a list of them. */
+    private static List<String> oldKeys(Map<String, Object> node, String path) {
+        String fieldPath = path.isEmpty() ? "old_key" : path + ".old_key";
+        Object value = node.get("old_key");
+        if (value == null) return List.of();
+        List<String> keys = new ArrayList<>();
+        if (value instanceof List<?> items) {
+            for (int i = 0; i < items.size(); i++) {
+                keys.add(oldKey(items.get(i), fieldPath + "[" + i + "]"));
+            }
+        } else {
+            keys.add(oldKey(value, fieldPath));
+        }
+        return keys;
+    }
+
+    private static String oldKey(@Nullable Object value, String path) {
+        String key = string(value, path);
+        if (key == null || key.isBlank()) {
+            throw new DocumentException(path, "expected a key, got nothing");
+        }
+        return key;
+    }
+
     private static QuestConfigDTO quest(Object item, String path, String lang) {
         Map<String, Object> quest = map(item, path);
         String key = requiredString(quest, "key", path);
-        String uid = requiredString(quest, "uid", path);
+        String uid = optionalString(quest, "uid", path);
 
         List<QuestStageConfigDTO> stages = new ArrayList<>();
         Set<String> objectiveKeys = new HashSet<>();
+        Map<String, List<String>> objectiveOldKeys = new LinkedHashMap<>();
         List<Object> stageItems = list(quest.get("stages"), path + ".stages");
         for (int s = 0; s < stageItems.size(); s++) {
             String stagePath = path + ".stages[" + s + "]";
@@ -191,6 +344,7 @@ public final class QuestGroupDocumentReader {
                     throw new DocumentException(objectivePath + ".key",
                             "objective key '" + objectiveKey + "' is already used in this quest");
                 }
+                objectiveOldKeys.put(objectiveKey, oldKeys(objective, objectivePath));
                 objectives.add(DocumentYaml.fromTree(objective, QuestObjectiveConfigDTO.class));
             }
 
@@ -200,6 +354,8 @@ public final class QuestGroupDocumentReader {
                     flow != null ? flow(flow, stagePath + ".flow") : null,
                     objectives));
         }
+
+        checkObjectiveOldKeys(objectiveOldKeys, objectiveKeys, path + ".stages");
 
         // `rewards` is the former name of actions.complete, still read.
         String questActionsKey = actionsKey(quest);
@@ -229,10 +385,22 @@ public final class QuestGroupDocumentReader {
                     stages,
                     quest.get("requirements") != null ? conditions(quest.get("requirements"), path + ".requirements") : null,
                     uid,
-                    hooks);
+                    hooks,
+                    giver(quest.get("giver"), path + ".giver"),
+                    quest.get("completed_when") != null ? conditions(quest.get("completed_when"), path + ".completed_when") : null);
         } catch (IllegalArgumentException e) {
             throw new DocumentException(path, e.getMessage());
         }
+    }
+
+    /** {@code giver: {npc, conversation, line}}: the NPC that hands the quest out, null when the quest names none. */
+    private static @Nullable QuestGiver giver(@Nullable Object value, String path) {
+        if (value == null) return null;
+        Map<String, Object> giver = map(value, path);
+        String npc = string(giver.get("npc"), path + ".npc");
+        if (npc == null || npc.isBlank()) throw new DocumentException(path + ".npc", "a giver names its NPC");
+        return new QuestGiver(npc.trim(), string(giver.get("conversation"), path + ".conversation"),
+                com.github.ibanetchep.msquests.bukkit.quest.objective.NpcBound.line(giver.get("line")));
     }
 
     private static Flow flow(String flow, String path) {
@@ -337,6 +505,12 @@ public final class QuestGroupDocumentReader {
             throw new DocumentException(fieldPath, "is required");
         }
         return value;
+    }
+
+    /** A text that may be missing; blank counts as missing. */
+    private static @Nullable String optionalString(Map<String, Object> map, String field, String path) {
+        String value = string(map.get(field), path.isEmpty() ? field : path + "." + field);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private static @Nullable String string(@Nullable Object value, String path) {
