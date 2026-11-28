@@ -25,9 +25,9 @@ record QuestHud(String id, OverlayLayout layout, Map<String, String> texts, List
 
     /** What a named layer shows when the file sets nothing: same as {@code DEFAULT_TEXTS} of {@code hud.ts}. */
     static final Map<String, String> DEFAULT_TEXTS = Map.of(
-            "quest", "<gold>%quest_name%",
-            "objective", "<white>%objective_name%",
-            "progress", "<gray>[<yellow>%objective_progress%<gray>/%objective_target%]");
+            "quest", "<gold>{quest_name}",
+            "objective", "<white>{objective_name}",
+            "progress", "<gray>[<yellow>{objective_progress}<gray>/{objective_target}]");
 
     /** The file's YAML as Artisan serves it ({@code api.getProject().documents}), {@code id} included. */
     static QuestHud read(Map<String, Object> document) {
@@ -40,6 +40,20 @@ record QuestHud(String id, OverlayLayout layout, Map<String, String> texts, List
             texts.put(slot, value != null ? value : DEFAULT_TEXTS.get(slot));
         }
         return new QuestHud(id, read.layout(), Map.copyOf(texts), read.problems());
+    }
+
+    /**
+     * {@code source} with each variable filled: {@code {objective_name}}, as the editor's field offers
+     * it and the quest chains write it, or the older {@code %objective_name%}. A name {@code values}
+     * lacks stays as written. Same as {@code sampleText} of {@code hud.ts}.
+     */
+    static String fill(String source, Map<String, String> values) {
+        String result = source;
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            result = result.replace("{" + entry.getKey() + "}", entry.getValue())
+                    .replace("%" + entry.getKey() + "%", entry.getValue());
+        }
+        return result;
     }
 
     /** The text of a named layer, before its placeholders are filled. */

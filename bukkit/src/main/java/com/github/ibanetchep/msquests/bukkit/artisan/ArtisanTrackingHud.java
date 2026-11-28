@@ -1,7 +1,7 @@
 package com.github.ibanetchep.msquests.bukkit.artisan;
 
 import com.github.ibanetchep.msquests.bukkit.service.TrackingHud;
-import com.github.ibanetchep.msquests.bukkit.text.MessageBuilder;
+import com.github.ibanetchep.msquests.bukkit.lang.BukkitTranslator;
 import com.github.ibanetchep.msquests.core.quest.actor.Quest;
 import com.github.ibanetchep.msquests.core.quest.objective.QuestObjective;
 import net.artisanmc.modules.api.text.OverlayApi;
@@ -9,7 +9,9 @@ import net.artisanmc.modules.api.text.OverlayContent;
 import net.artisanmc.modules.api.text.OverlayLayout;
 import org.bukkit.entity.Player;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -63,15 +65,14 @@ final class ArtisanTrackingHud implements TrackingHud {
     /** Each named text layer of the layout, its text with the objective's and the quest's placeholders. */
     static OverlayContent content(QuestHud hud, Quest quest, QuestObjective objective) {
         OverlayContent.Builder content = OverlayContent.builder();
+        // The objective's values first: they win over a quest's value of the same name.
+        Map<String, String> values = new LinkedHashMap<>(quest.getPlaceholders(BukkitTranslator.getInstance()));
+        values.putAll(objective.getPlaceholders(BukkitTranslator.getInstance()));
         for (OverlayLayout.Layer layer : hud.layout().getLayers()) {
             if (!(layer instanceof OverlayLayout.Text text)) continue;
             String source = hud.text(text.slot());
             if (source == null) continue;
-            String filled = MessageBuilder.raw(source)
-                    .applyPlaceholderResolver(objective)
-                    .applyPlaceholderResolver(quest)
-                    .toStringRaw();
-            content.text(text.slot(), List.of(filled));
+            content.text(text.slot(), List.of(QuestHud.fill(source, values)));
         }
         return content.build();
     }

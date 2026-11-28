@@ -8,6 +8,7 @@ import {
   HUD_KIND,
   HUD_SCHEMA,
   HUD_START,
+  HUD_START_TEXTS,
   type QuestHud,
   hudPackImages,
   parseHud,
@@ -31,7 +32,13 @@ export const questHudKind: DocumentKindContribution & { wide?: boolean } = {
   // The composer lays its layers, the screen and the panel side by side.
   wide: true,
   create: ({ id, projectId }) =>
-    ({ id, projectId, layout: structuredClone(HUD_START), texts: {}, rest: {} }) satisfies QuestHud,
+    ({
+      id,
+      projectId,
+      layout: structuredClone(HUD_START),
+      texts: { ...HUD_START_TEXTS },
+      rest: {},
+    }) satisfies QuestHud,
   parse: (src, ctx) => parseHud(src, ctx),
   serialize: (doc) => serializeHud(doc as QuestHud),
   pack: { images: hudPackImages },

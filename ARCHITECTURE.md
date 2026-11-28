@@ -963,4 +963,7 @@ the layout and shows it in `OverlayApi.Slot.BOSS_BAR` (Artisan API 1.13.0) as th
 otherwise it hides its layer and the service shows the ordinary boss bar. On an older Artisan no
 HUD is built. The images reach the pack through `pack.images` (`hudPackImages` in `hud.ts`) and its
 server twin `QuestHudPackImages`: change one, change the other.
+A text's variables are the objective's and the quest's placeholders, written `{objective_name}` (the
+editor's field offers them on `{`, SDK 1.25) or the older `%objective_name%`: `QuestHud.fill` and
+its twin `sampleText` in `hud.ts` fill both, the objective's value winning over the quest's.
 

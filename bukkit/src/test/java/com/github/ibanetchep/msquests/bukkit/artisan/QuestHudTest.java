@@ -42,6 +42,12 @@ class QuestHudTest {
     }
 
     @Test
+    void fillsVariablesInBracesAndTheOlderPercentForm() {
+        assertEquals("Kill 3 {other}", QuestHud.fill("{objective_name} %objective_target% {other}",
+                Map.of("objective_name", "Kill", "objective_target", "3")));
+    }
+
+    @Test
     void aWrongLayerIsReportedAndLeftOut() {
         QuestHud hud = QuestHud.read(Map.of("id", "a", "layout", List.of(Map.of("nope", 1))));
         assertEquals(0, hud.layout().getLayers().size());

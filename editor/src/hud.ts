@@ -24,13 +24,13 @@ export type HudSlot = (typeof HUD_SLOTS)[number];
 
 /**
  * What each named layer shows when the file says nothing: MiniMessage with the objective's and
- * the quest's placeholders (`%objective_name%`, `%objective_progress%`, `%objective_target%`,
- * `%quest_name%`…). Same as `QuestHudReader.DEFAULT_TEXTS`.
+ * the quest's variables (`{objective_name}`, `{objective_progress}`, `{objective_target}`,
+ * `{quest_name}`…). Same as `QuestHud.DEFAULT_TEXTS`.
  */
 export const DEFAULT_TEXTS: Record<HudSlot, string> = {
-  quest: "<gold>%quest_name%",
-  objective: "<white>%objective_name%",
-  progress: "<gray>[<yellow>%objective_progress%<gray>/%objective_target%]",
+  quest: "<gold>{quest_name}",
+  objective: "<white>{objective_name}",
+  progress: "<gray>[<yellow>{objective_progress}<gray>/{objective_target}]",
 };
 
 export type Raw = Record<string, unknown>;
@@ -46,11 +46,18 @@ export interface QuestHud {
   rest: Raw;
 }
 
-/** A new HUD: the objective and its count side by side under the top of the screen. */
-export const HUD_START: unknown[] = [
-  { text: "objective", x: -100, y: 6, width: 150, align: "left" },
-  { text: "progress", x: 52, y: 6, width: 48, align: "right" },
-];
+/**
+ * A new HUD: one line, centred under the top of the screen, the objective followed by its count.
+ * One text rather than two side by side: the objective's name has no fixed width, so a count
+ * in a layer of its own overlaps a long name or floats away from a short one. The `progress`
+ * layer stays for a layout that wants the count elsewhere (under the line, beside an icon).
+ */
+export const HUD_START: unknown[] = [{ text: "objective", x: -150, y: 6, width: 300, align: "center" }];
+
+/** The texts of a new HUD: its one line carries the count. */
+export const HUD_START_TEXTS: Partial<Record<HudSlot, string>> = {
+  objective: "<white>{objective_name} <gray>[<yellow>{objective_progress}<gray>/{objective_target}]",
+};
 
 const isMap = (v: unknown): v is Raw => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -105,9 +112,14 @@ export function hudText(hud: QuestHud, slot: HudSlot): string {
   return value === undefined || value === "" ? DEFAULT_TEXTS[slot] : value;
 }
 
-/** Placeholders filled with a sample, so that the composer shows what a player reads. */
+/**
+ * Variables filled with a sample, so that the composer shows what a player reads: `{name}`, or the
+ * older `%name%`. Same as `QuestHud.fill`.
+ */
 export function sampleText(source: string, sample: Record<string, string>): string {
-  return source.replace(/%([a-z_]+)%/g, (all, name: string) => sample[name] ?? all);
+  return source.replace(/\{([a-z_]+)\}|%([a-z_]+)%/g, (all, braced?: string, percent?: string) => {
+    return sample[(braced ?? percent) as string] ?? all;
+  });
 }
 
 /** The composer's preview: each named layer's text with sample values. */
