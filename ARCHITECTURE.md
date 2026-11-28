@@ -951,3 +951,16 @@ A tag with a dash (`v1.2.0-beta.1`) gives a pre-release.
 
 `artisan-core-api` (version `artisanApiVersion` in `gradle.properties`) comes from
 `https://repo.artisanmc.net/releases` (Artisan's Reposilite), without a token.
+
+## Tracked quest HUD
+
+`tracking.bossbar.hud` names a `quest_hud` Document (`quest_huds/<id>.yaml`, kind declared by
+`MsQuestsArtisanModule`, editor view `editor/src/QuestHudEditor.tsx`): an Artisan `OverlayLayout`
+under `layout` and the MiniMessage of its named `text` layers (`quest`, `objective`, `progress`)
+under `texts`. `TrackingBossBarService` asks its `TrackingHud` first: `ArtisanTrackingHud` composes
+the layout and shows it in `OverlayApi.Slot.BOSS_BAR` (Artisan API 1.13.0) as the layer
+`quests:tracking`, for a player whose client has the pack and only when the pack holds every image;
+otherwise it hides its layer and the service shows the ordinary boss bar. On an older Artisan no
+HUD is built. The images reach the pack through `pack.images` (`hudPackImages` in `hud.ts`) and its
+server twin `QuestHudPackImages`: change one, change the other.
+

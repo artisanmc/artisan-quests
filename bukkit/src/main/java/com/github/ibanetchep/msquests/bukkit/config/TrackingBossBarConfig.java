@@ -8,5 +8,10 @@ public record TrackingBossBarConfig(
         String message,
         BarColor color,
         BarOverlay style,
-        boolean showProgress
+        boolean showProgress,
+        /**
+         * The {@code quest_hud} Document drawn instead of the bar for a player who has Artisan's
+         * pack ({@code <project>:<id>} or {@code <id>}), blank for none.
+         */
+        String hud
 ) {}

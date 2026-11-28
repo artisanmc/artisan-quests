@@ -1,6 +1,7 @@
 import { type FrontendModule, SDK_VERSION } from "@artisan/editor-sdk";
 import { QuestStatsTab } from "./QuestStatsTab";
 import { questGroupKind } from "./questGroupKind";
+import { questHudKind } from "./questHudKind";
 import { questsLocalRows } from "./sourceRows";
 
 /**
@@ -16,7 +17,8 @@ const questsModule: FrontendModule = {
   sidebar: { icon: () => null, label: "Quests", to: "/m/msquests" },
   // Quests are Documents: they are edited from the project, no screen of their own.
   routes: [],
-  documents: [questGroupKind],
+  // The groups, and the HUD of the tracked quest at the top of the screen (SDK 1.24).
+  documents: [questGroupKind, questHudKind],
   // The quest sources previewed from the draft, joined to the player's state on the server.
   localPreviewRows: questsLocalRows,
   // The Quests tab of the server's Statistics space (SDK 1.23).

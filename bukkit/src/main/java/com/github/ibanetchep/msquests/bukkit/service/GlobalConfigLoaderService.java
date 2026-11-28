@@ -79,9 +79,10 @@ public class GlobalConfigLoaderService {
         BarColor bossBarColor = BarColor.valueOf(config.getString("tracking.bossbar.color", "WHITE").toUpperCase());
         BarOverlay bossBarStyle = BarOverlay.valueOf(config.getString("tracking.bossbar.style", "PROGRESS").toUpperCase());
         boolean bossBarShowProgress = config.getBoolean("tracking.bossbar.show_progress", true);
+        String bossBarHud = config.getString("tracking.bossbar.hud", "").trim();
 
         TrackingBossBarConfig trackingBossBarConfig = new TrackingBossBarConfig(
-                bossBarEnabled, bossBarMessage, bossBarColor, bossBarStyle, bossBarShowProgress
+                bossBarEnabled, bossBarMessage, bossBarColor, bossBarStyle, bossBarShowProgress, bossBarHud
         );
 
         int cycleDurationSeconds = Math.max(1, config.getInt("placeholders.cycle_duration_seconds", 5));

@@ -1,4 +1,4 @@
-config_version: 3
+config_version: 4
 
 language: en_EN
 
@@ -64,6 +64,9 @@ tracking:
     color: WHITE
     style: PROGRESS
     show_progress: true
+    # A quest_hud of the editor (Artisan 1.13+), drawn at the top of the screen instead of the bar
+    # for a player who has Artisan's resource pack: "<project>:<id>" or "<id>". Empty: the bar only.
+    hud: ''
 
 placeholders:
   cycle_duration_seconds: 5
